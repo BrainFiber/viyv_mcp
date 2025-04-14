@@ -1,0 +1,12 @@
+{
+    "name": "slack",
+    "command": "npx-for-claude",
+    "args": [
+      "-y",
+      "@modelcontextprotocol/server-slack"
+    ],
+    "env": {
+      "SLACK_BOT_TOKEN": "xoxb-xxxx",
+      "SLACK_TEAM_ID":   "Txxx"
+    }
+  }

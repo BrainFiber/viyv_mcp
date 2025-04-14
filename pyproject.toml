@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=62", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "viyv_mcp"
+version = "0.1.0"
+description = "A simple wrapper library for FastMCP + Starlette"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    { name = "hiroki takezawa", email = "hiroki.takezawa@brainfiber.net" }
+]
+keywords = ["mcp", "fastmcp", "starlette", "uvicorn"]
+dependencies = [
+  "starlette>=0.25.0",
+  "mcp[cli]>=1.6.0",
+  "uvicorn>=0.22.0"
+]
+
+[project.urls]
+Homepage = "https://github.com/BrainFiber/viyv_mcp"
+Repository = "https://github.com/BrainFiber/viyv_mcp"
+
+[project.scripts]
+create-viyv-mcp = "viyv_mcp.cli:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["viyv_mcp*"]
+
+[tool.setuptools.package-data]
+"viyv_mcp" = [
+  "templates/*",
+  "templates/**/*"
+]

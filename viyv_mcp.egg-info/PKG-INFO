@@ -1,0 +1,11 @@
+Metadata-Version: 2.4
+Name: viyv_mcp
+Version: 0.1.0
+Summary: A simple wrapper library for FastMCP + Starlette
+Author-email: YourName <you@example.com>
+License-Expression: MIT
+Keywords: mcp,fastmcp,starlette,uvicorn
+Description-Content-Type: text/markdown
+Requires-Dist: starlette>=0.25.0
+Requires-Dist: mcp[cli]>=1.6.0
+Requires-Dist: uvicorn>=0.22.0
