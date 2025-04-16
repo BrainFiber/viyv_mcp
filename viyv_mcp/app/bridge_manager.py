@@ -9,6 +9,7 @@ from typing import List, Tuple
 from mcp import ClientSession, types
 from mcp.client.stdio import stdio_client, StdioServerParameters
 from mcp.server.fastmcp import FastMCP
+import inspect
 
 logger = logging.getLogger(__name__)
 
@@ -270,14 +271,83 @@ async def _safe_list_prompts(session: ClientSession, server_name: str) -> List[t
 # 実際の登録 (tool / resource / prompt)
 # ----------------------------------------------------------------------------
 def _register_tool_bridge(mcp: FastMCP, session: ClientSession, tool_info: types.Tool):
+    """
+    tool_info から inputSchema を解析し、kwargs を定義して bridged_tool を登録する
+
+    JSON Schema の情報（型、default、required、description）を pydantic の Field と
+    typing.Annotated を用いて __signature__ に動的に組み上げるように改修済み。
+    """
     tool_name = tool_info.name
     desc = tool_info.description or f"Bridged external tool '{tool_name}'"
+    input_schema = tool_info.inputSchema or {}
 
-    async def bridged_tool(**kwargs):
-        return await session.call_tool(tool_name, arguments=kwargs)
+    params = []
+    # JSON Schema の properties, required を利用して関数パラメータを構築
+    if isinstance(input_schema, dict):
+        props = input_schema.get("properties", {})
+        required_fields = input_schema.get("required", [])
+        json_type_mapping = {
+            'string': str,
+            'integer': int,
+            'object': dict,
+            'boolean': bool,
+            'number': float,
+            'array': list
+        }
+        from typing import Annotated, Optional
+        from pydantic import Field
 
+        for name, schema in props.items():
+            json_type = schema.get("type", "any")
+            base_type = json_type_mapping.get(json_type, object)
+            description_field = schema.get("description", "")
+            # 必須なら default は省略（pydanticでは ... を指定する）
+            if name in required_fields:
+                default_val = inspect.Parameter.empty
+                field_default = ...  # required
+            else:
+                # default が指定されていなければ None をデフォルトにし、Optional にする
+                if "default" in schema:
+                    default_val = schema["default"]
+                    field_default = default_val
+                else:
+                    default_val = None
+                    field_default = None
+                    base_type = Optional[base_type]
+            # Annotated に Field の情報を付与
+            annotated_type = Annotated[base_type, Field(field_default, description=description_field)]
+            param = inspect.Parameter(
+                name,
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                default=(default_val if default_val is not inspect.Parameter.empty else inspect.Parameter.empty),
+                annotation=annotated_type
+            )
+            params.append(param)
+    else:
+        # input_schema が dict でなければ、従来の挙動にフォールバック
+        arg_names = []
+        props = {}
+        if isinstance(input_schema, dict):
+            props = input_schema.get("properties", {})
+            arg_names = list(props.keys())
+        for name in arg_names:
+            param = inspect.Parameter(
+                name,
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                default=inspect.Parameter.empty
+            )
+            params.append(param)
+
+    async def _impl(**all_kwargs):
+        # 必要な引数だけ抽出し、値がNone/空でないものだけ渡す
+        args_for_tool = {k: v for k, v in all_kwargs.items() if k in [p.name for p in params] and v is not None}
+        return await session.call_tool(tool_name, arguments=args_for_tool)
+
+    bridged_tool = _impl
+    bridged_tool.__signature__ = inspect.Signature(params)
     bridged_tool.__doc__ = desc
-    mcp.tool(name=tool_name)(bridged_tool)
+
+    mcp.add_tool(name=tool_name, fn=bridged_tool, description=desc)
 
 
 def _register_resource_bridge(mcp: FastMCP, session: ClientSession, rinfo: types.Resource):
