@@ -1,5 +1,3 @@
-
-
 README.md
 
 # viyv_mcp
@@ -17,10 +15,11 @@ It enables you to quickly create a fully‐configured MCP server project with sa
   
 - **Template Inclusion:**  
   The generated project contains pre-configured templates for:
-  - **Configuration Files:** (e.g. `app/config_files/sample_slack.json`)
+  - **Configuration Files:** (e.g. `app/config.py`)
   - **Prompts:** (e.g. `app/prompts/sample_prompt.py`)
   - **Resources:** (e.g. `app/resources/sample_echo_resource.py`)
   - **Tools:** (e.g. `app/tools/sample_math_tools.py`)
+  - **MCP Server Configs:** (e.g. `app/mcp_server_configs/sample_slack.json`)
   - Additionally, a sample `Dockerfile` and `pyproject.toml` for the generated project are included.
 
 ## Installation
@@ -54,7 +53,7 @@ my_mcp_project/
 ├── main.py
 └── app/
     ├── config.py
-    ├── config_files/
+    ├── mcp_server_configs/
     │   └── sample_slack.json
     ├── prompts/
     │   └── sample_prompt.py
@@ -83,7 +82,7 @@ my_mcp_project/
    uv run python main.py
    ```
 
-The server will start on `0.0.0.0:8000` by default. The project is pre-configured to automatically register local modules (tools, resources, prompts) and to attempt bridging any external MCP servers as specified in `app/config_files/sample_slack.json`.
+The server will start on `0.0.0.0:8000` by default. The project is pre-configured to automatically register local modules (tools, resources, prompts) and to attempt bridging any external MCP servers as specified in `app/mcp_server_configs/sample_slack.json`.
 
 ### Project Structure
 
@@ -98,7 +97,7 @@ The server will start on `0.0.0.0:8000` by default. The project is pre-configure
     - `main.py`: Entry point to launch the MCP server.
     - **app/**: Contains the sample application code:
       - `config.py`: Basic configuration (e.g., host, port, bridge config directory).
-      - `config_files/sample_slack.json`: Sample external MCP server configuration.
+      - `mcp_server_configs/sample_slack.json`: Sample external MCP server configuration.
       - `prompts/sample_prompt.py`: A sample prompt module.
       - `resources/sample_echo_resource.py`: A sample resource module.
       - `tools/sample_math_tools.py`: A sample tool module.

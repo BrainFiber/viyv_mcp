@@ -7,4 +7,4 @@ class Config:
 
     # 外部MCPサーバーの設定ファイルを格納するディレクトリ
     # プロジェクト構成にあわせて好きなパスを指定
-    BRIDGE_CONFIG_DIR = os.getenv("BRIDGE_CONFIG_DIR", "app/config_files")
+    BRIDGE_CONFIG_DIR = os.getenv("BRIDGE_CONFIG_DIR", "app/mcp_server_configs")
