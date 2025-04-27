@@ -1,0 +1,9 @@
+*.pyc
+__pycache__
+viyv_mcp.egg-info/PKG-INFO
+viyv_mcp.egg-info/SOURCES.txt
+viyv_mcp.egg-info/dependency_links.txt
+viyv_mcp.egg-info/entry_points.txt
+viyv_mcp.egg-info/requires.txt
+viyv_mcp.egg-info/top_level.txt
+viyv_mcp.egg-info/

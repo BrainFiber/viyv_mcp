@@ -1,11 +1,133 @@
 Metadata-Version: 2.4
 Name: viyv_mcp
-Version: 0.1.0
+Version: 0.1.1
 Summary: A simple wrapper library for FastMCP + Starlette
-Author-email: YourName <you@example.com>
-License-Expression: MIT
+Author-email: hiroki takezawa <hiroki.takezawa@brainfiber.net>
+License: MIT
+Project-URL: Homepage, https://github.com/BrainFiber/viyv_mcp
+Project-URL: Repository, https://github.com/BrainFiber/viyv_mcp
 Keywords: mcp,fastmcp,starlette,uvicorn
+Requires-Python: >=3.10
 Description-Content-Type: text/markdown
 Requires-Dist: starlette>=0.25.0
-Requires-Dist: mcp[cli]>=1.6.0
+Requires-Dist: fastmcp>=2.2.5
 Requires-Dist: uvicorn>=0.22.0
+
+README.md
+
+# viyv_mcp
+
+**viyv_mcp** is a simple Python wrapper library for FastMCP and Starlette.  
+It enables you to quickly create a fully‐configured MCP server project with sample tools, resources, prompts, and external configuration support.
+
+## Features
+
+- **Quick Project Creation:**  
+  Use the provided CLI command `create-viyv-mcp new <project_name>` to generate a new project template with a complete directory structure and sample files.
+  
+- **Integrated MCP Server:**  
+  Automatically sets up FastMCP with Starlette and includes auto-registration of local tools, resources, and prompts.
+  
+- **Template Inclusion:**  
+  The generated project contains pre-configured templates for:
+  - **Configuration Files:** (e.g. `app/config.py`)
+  - **Prompts:** (e.g. `app/prompts/sample_prompt.py`)
+  - **Resources:** (e.g. `app/resources/sample_echo_resource.py`)
+  - **Tools:** (e.g. `app/tools/sample_math_tools.py`)
+  - **MCP Server Configs:** (e.g. `app/mcp_server_configs/sample_slack.json`)
+  - Additionally, a sample `Dockerfile` and `pyproject.toml` for the generated project are included.
+
+## Installation
+
+### From PyPI
+
+Install **viyv_mcp** via pip:
+
+```bash
+pip install viyv_mcp
+```
+
+This installs the package as well as provides the CLI command `create-viyv-mcp`.
+
+## Usage
+
+### Creating a New Project Template
+
+After installing the package, run:
+
+```bash
+create-viyv-mcp new my_mcp_project
+```
+
+This command creates a new directory called `my_mcp_project` with the following structure:
+
+```
+my_mcp_project/
+├── Dockerfile
+├── pyproject.toml
+├── main.py
+└── app/
+    ├── config.py
+    ├── mcp_server_configs/
+    │   └── sample_slack.json
+    ├── prompts/
+    │   └── sample_prompt.py
+    ├── resources/
+    │   └── sample_echo_resource.py
+    └── tools/
+        └── sample_math_tools.py
+```
+
+### Running the MCP Server
+1. Change into your new project directory:
+
+   ```bash
+   cd my_mcp_project
+   ```
+
+2. Use `uv` to resolve dependencies (this uses the `pyproject.toml` for dependency management):
+
+   ```bash
+   uv sync
+   ```
+
+3. Start the server with:
+
+   ```bash
+   uv run python main.py
+   ```
+
+The server will start on `0.0.0.0:8000` by default. The project is pre-configured to automatically register local modules (tools, resources, prompts) and to attempt bridging any external MCP servers as specified in `app/mcp_server_configs/sample_slack.json`.
+
+### Project Structure
+
+- **viyv_mcp/**  
+  Contains the core Python package:
+  - `__init__.py`: Re-exports key classes such as `ViyvMCP`.
+  - `core.py`: Implements the `ViyvMCP` class that wraps FastMCP and integrates auto-registration, external bridge support, and Starlette integration.
+  - `cli.py`: Implements the CLI entry point (`create-viyv-mcp` command).
+  - **templates/**: Contains the project template files, including:
+    - `Dockerfile`: For containerizing the generated project.
+    - `pyproject.toml`: For dependency management of the generated project.
+    - `main.py`: Entry point to launch the MCP server.
+    - **app/**: Contains the sample application code:
+      - `config.py`: Basic configuration (e.g., host, port, bridge config directory).
+      - `mcp_server_configs/sample_slack.json`: Sample external MCP server configuration.
+      - `prompts/sample_prompt.py`: A sample prompt module.
+      - `resources/sample_echo_resource.py`: A sample resource module.
+      - `tools/sample_math_tools.py`: A sample tool module.
+
+## Contributing
+
+Contributions are welcome! If you find a bug or have a feature request, please open an issue or create a pull request on GitHub.
+
+## License
+
+This project is licensed under the MIT License. See the LICENSE file for details.
+
+## Contact
+
+For any inquiries, please contact:
+- hiroki takezawa  
+  Email: hiroki.takezawa@brainfiber.net
+- GitHub: BrainFiber/viyv_mcp

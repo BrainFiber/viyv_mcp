@@ -18,10 +18,10 @@ classifiers = [
 ]
 dependencies = [
   "starlette>=0.25.0",
-  "fastmcp>=2.1.2",
+  "fastmcp>=2.2.5",
   "uvicorn>=0.22.0",
 ]
 
 # CLIエントリポイント設定
 [project.scripts]
-create-viyv-mcp = "viyv_mcp.cli:main"d
+create-viyv-mcp = "viyv_mcp.cli:main"

@@ -1,8 +1,10 @@
+README.md
 pyproject.toml
 viyv_mcp/__init__.py
 viyv_mcp/_version.py
 viyv_mcp/cli.py
 viyv_mcp/core.py
+viyv_mcp/decorators.py
 viyv_mcp.egg-info/PKG-INFO
 viyv_mcp.egg-info/SOURCES.txt
 viyv_mcp.egg-info/dependency_links.txt
@@ -19,7 +21,7 @@ viyv_mcp/templates/Dockerfile
 viyv_mcp/templates/main.py
 viyv_mcp/templates/pyproject.toml
 viyv_mcp/templates/app/config.py
-viyv_mcp/templates/app/config_files/sample_slack.json
+viyv_mcp/templates/app/mcp_server_configs/sample_slack.json
 viyv_mcp/templates/app/prompts/sample_prompt.py
 viyv_mcp/templates/app/resources/sample_echo_resource.py
 viyv_mcp/templates/app/tools/sample_math_tools.py
