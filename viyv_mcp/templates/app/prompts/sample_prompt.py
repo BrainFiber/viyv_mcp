@@ -1,10 +1,8 @@
 # app/prompts/sample_prompt.py
-from mcp.server.fastmcp import FastMCP
-import mcp.types as types
-from viyv_mcp import prompt
+from fastmcp import FastMCP
 
 def register(mcp: FastMCP):
-    @prompt()
+    @mcp.prompt()
     def sample_prompt(query: str) -> str:
         """
         ユーザーの質問に対して、そのまま返すプロンプトの例。

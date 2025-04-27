@@ -15,8 +15,10 @@ authors = [
 keywords = ["mcp", "fastmcp", "starlette", "uvicorn"]
 dependencies = [
   "starlette>=0.25.0",
-  "fastmcp>=2.2.5",
-  "uvicorn>=0.22.0"
+  "fastmcp>=2.1.2",
+  "uvicorn>=0.22.0",
+  "fastapi>=0.115.12",
+  "build>=1.2.2.post1",
 ]
 
 [project.urls]

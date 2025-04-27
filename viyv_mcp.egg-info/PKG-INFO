@@ -10,8 +10,10 @@ Keywords: mcp,fastmcp,starlette,uvicorn
 Requires-Python: >=3.10
 Description-Content-Type: text/markdown
 Requires-Dist: starlette>=0.25.0
-Requires-Dist: fastmcp>=2.2.5
+Requires-Dist: fastmcp>=2.1.2
 Requires-Dist: uvicorn>=0.22.0
+Requires-Dist: fastapi>=0.115.12
+Requires-Dist: build>=1.2.2.post1
 
 README.md
 

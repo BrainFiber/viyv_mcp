@@ -8,7 +8,7 @@ from typing import List, Tuple
 
 from mcp import ClientSession, types
 from mcp.client.stdio import stdio_client, StdioServerParameters
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 import inspect
 
 logger = logging.getLogger(__name__)

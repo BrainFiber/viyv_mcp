@@ -1,6 +1,6 @@
 # Decorators wrapping mcp decorators
 
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 import inspect
 
 

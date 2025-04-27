@@ -2,7 +2,7 @@ import logging
 from starlette.applications import Starlette
 from starlette.routing import Mount
 
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 
 # 下記はプロジェクト内にあるモジュールをインポート（例: app/ 下）
 # 実際のパッケージ構成に合わせて import パスを修正してください
