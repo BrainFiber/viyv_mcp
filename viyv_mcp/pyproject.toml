@@ -21,6 +21,8 @@ dependencies = [
   "fastmcp>=2.1.2",
   "uvicorn>=0.22.0",
   "fastapi>=0.115.12",
+  "openai-agents>=0.0.13",
+  "pydantic>=2",
 ]
 
 # CLIエントリポイント設定

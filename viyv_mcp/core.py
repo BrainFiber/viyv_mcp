@@ -42,6 +42,7 @@ class ViyvMCP:
         auto_register_modules(mcp, "app.tools")
         auto_register_modules(mcp, "app.resources")
         auto_register_modules(mcp, "app.prompts")
+        auto_register_modules(mcp, "app.agents")
 
         logger.info("ViyvMCP: MCP server created & local modules registered.")
         return mcp
