@@ -9,18 +9,22 @@ It enables you to quickly create a fully‐configured MCP server project with sa
 
 - **Quick Project Creation:**  
   Use the provided CLI command `create-viyv-mcp new <project_name>` to generate a new project template with a complete directory structure and sample files.
-  
 - **Integrated MCP Server:**  
-  Automatically sets up FastMCP with Starlette and includes auto-registration of local tools, resources, and prompts.
-  
+  Automatically sets up FastMCP with Starlette and provides an SSE-based API.
+- **Decorator APIs:**  
+  Simplify registration of tools, resources, prompts, and agents with built-in decorators (`@tool`, `@resource`, `@prompt`, and `@agent`).
+- **External MCP Bridge Support:**  
+  Automatically launches and registers external MCP servers based on JSON config files in `app/mcp_server_configs`.
+- **Health Check Endpoint:**  
+  Provides a `/health` endpoint to verify server status (returns `{"status":"ok"}`).
 - **Template Inclusion:**  
-  The generated project contains pre-configured templates for:
+  The generated project templates include:
   - **Configuration Files:** (e.g. `app/config.py`)
   - **Prompts:** (e.g. `app/prompts/sample_prompt.py`)
   - **Resources:** (e.g. `app/resources/sample_echo_resource.py`)
   - **Tools:** (e.g. `app/tools/sample_math_tools.py`)
   - **MCP Server Configs:** (e.g. `app/mcp_server_configs/sample_slack.json`)
-  - Additionally, a sample `Dockerfile` and `pyproject.toml` for the generated project are included.
+  - **Dockerfile**, **pyproject.toml**, and **main.py** for the generated project.
 
 ## Installation
 
@@ -82,25 +86,35 @@ my_mcp_project/
    uv run python main.py
    ```
 
-The server will start on `0.0.0.0:8000` by default. The project is pre-configured to automatically register local modules (tools, resources, prompts) and to attempt bridging any external MCP servers as specified in `app/mcp_server_configs/sample_slack.json`.
+The server will start on `0.0.0.0:8000` by default. It exposes an SSE-based API at `/` and `/messages`, provides a health-check endpoint at `/health` (returns `{"status":"ok"}`), automatically registers local modules (tools, resources, prompts), and bridges external MCP servers defined in `app/mcp_server_configs`.
 
-### Project Structure
+### Package Structure
 
-- **viyv_mcp/**  
-  Contains the core Python package:
-  - `__init__.py`: Re-exports key classes such as `ViyvMCP`.
-  - `core.py`: Implements the `ViyvMCP` class that wraps FastMCP and integrates auto-registration, external bridge support, and Starlette integration.
-  - `cli.py`: Implements the CLI entry point (`create-viyv-mcp` command).
-  - **templates/**: Contains the project template files, including:
-    - `Dockerfile`: For containerizing the generated project.
-    - `pyproject.toml`: For dependency management of the generated project.
-    - `main.py`: Entry point to launch the MCP server.
-    - **app/**: Contains the sample application code:
-      - `config.py`: Basic configuration (e.g., host, port, bridge config directory).
-      - `mcp_server_configs/sample_slack.json`: Sample external MCP server configuration.
-      - `prompts/sample_prompt.py`: A sample prompt module.
-      - `resources/sample_echo_resource.py`: A sample resource module.
-      - `tools/sample_math_tools.py`: A sample tool module.
+```text
+viyv_mcp/
+├── __init__.py           # Exports version, ViyvMCP, and decorators
+├── core.py               # FastMCP integration and ASGI app setup
+├── cli.py                # CLI command (create-viyv-mcp)
+├── decorators.py         # Decorators for tool, resource, prompt, and agent registration
+├── app/
+│   ├── config.py         # Configuration (HOST, PORT, BRIDGE_CONFIG_DIR)
+│   ├── lifespan.py       # Lifecycle context manager
+│   ├── registry.py       # Module auto-registration logic
+│   └── bridge_manager.py # External bridge management (init and close)
+└── templates/
+    ├── Dockerfile
+    ├── pyproject.toml
+    ├── main.py
+    └── app/              # Sample project scaffold
+        ├── config.py
+        ├── mcp_server_configs/sample_slack.json
+        ├── prompts/sample_prompt.py
+        ├── resources/sample_echo_resource.py
+        └── tools/sample_math_tools.py
+
+pyproject.toml
+README.md
+```
 
 ## Contributing
 

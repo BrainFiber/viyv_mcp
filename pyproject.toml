@@ -19,6 +19,7 @@ dependencies = [
   "uvicorn>=0.22.0",
   "fastapi>=0.115.12",
   "build>=1.2.2.post1",
+  "pydantic>=2",
 ]
 
 [project.urls]
