@@ -1,16 +1,20 @@
 """
-FastMCP ⇄ OpenAI Agents SDK ブリッジユーティリティ
+FastMCP ⇄ OpenAI Agents SDK ブリッジ
+
+* `default` キーは最終 JSON-Schema から完全に除去
+* OpenAI Functions の仕様に合わせて **required = properties の全キー**
+* 既定値を持つ引数は `nullable: true` で表現し、実行時に補完
 """
 
 from __future__ import annotations
 
 import inspect
-from typing import Callable, Coroutine, Dict, Iterable, List
+from typing import Callable, Coroutine, Dict, Iterable, List, Optional, Union
 
 from viyv_mcp.agent_runtime import get_tools
 from pydantic import BaseModel, ValidationError, create_model, Field
 
-# OpenAI Agents SDK を遅延 import
+# ──────────────────────────────── SDK 遅延 import ──────────────────────────────── #
 try:
     from agents import function_tool  # type: ignore
 except ImportError:  # pragma: no cover
@@ -25,11 +29,8 @@ def _ensure_function_tool():
     return function_tool
 
 
-# --------------------------------------------------------------------------- #
-# ラッパ生成ユーティリティ
-# --------------------------------------------------------------------------- #
+# ───────────────────────────── sync → async ラッパ ───────────────────────────── #
 def _as_async(fn: Callable) -> Callable[..., Coroutine]:
-    """sync 関数を async ラッパで包む"""
     if inspect.iscoroutinefunction(fn):
         return fn  # type: ignore[return-value]
 
@@ -41,31 +42,31 @@ def _as_async(fn: Callable) -> Callable[..., Coroutine]:
     return _wrapper
 
 
+# ─────────────────────── Pydantic ラッパ（nullable=true） ────────────────────── #
 def _wrap_with_pydantic(call_fn: Callable) -> Callable[..., Coroutine]:
     """
-    call_fn: signature 完備 & async
-    - OpenAI Agents SDK が
-        * dict を 1 つの位置引数で渡す 例: fn({"a":1,"b":2})
-        * 位置引数で順番に渡す      例: fn(1, 2)
-      どちらにも対応。
-    - Pydantic で厳密バリデーション後に call_fn を実行。
+    * 既定値を持つ param → `nullable: true`、required から外す
+    * JSON-Schema に `default` を残さない
     """
-    sig = inspect.signature(call_fn)
-    param_names = list(sig.parameters)  # ['a', 'b', ...]
+    orig_sig = inspect.signature(call_fn)
+    param_names = list(orig_sig.parameters)
     fields: Dict[str, tuple] = {}
+    fallback_ann = Union[int, float, str, bool, None]
 
-    for name, param in sig.parameters.items():
-        ann = (
-            param.annotation
-            if param.annotation is not inspect._empty
-            else (int | float | str | bool | None)
-        )
-        default_field = (
-            Field(..., title=name)
-            if param.default is inspect._empty
-            else Field(param.default, title=name)
-        )
-        fields[name] = (ann, default_field)
+    for name, param in orig_sig.parameters.items():
+        ann_base = param.annotation if param.annotation is not inspect._empty else fallback_ann
+
+        if param.default is inspect._empty:  # 必須
+            fields[name] = (ann_base, Field(..., title=name))
+        else:  # 任意 → nullable:true
+            fields[name] = (
+                ann_base,
+                Field(
+                    None,
+                    title=name,
+                    json_schema_extra={"nullable": True},
+                ),
+            )
 
     ArgsModel: type[BaseModel] = create_model(  # type: ignore[valid-type]
         f"{call_fn.__name__}_args",
@@ -73,47 +74,61 @@ def _wrap_with_pydantic(call_fn: Callable) -> Callable[..., Coroutine]:
         **fields,
     )
 
+    # Signature：任意 param は default=None
+    new_params = [
+        inspect.Parameter(
+            p.name,
+            kind=inspect.Parameter.KEYWORD_ONLY,
+            annotation=fields[p.name][0],
+            default=(inspect._empty if p.default is inspect._empty else None),
+        )
+        for p in orig_sig.parameters.values()
+    ]
+    new_sig = inspect.Signature(new_params)
+
     async def _validated(*args, **kwargs):
-        # --- args を kwargs に変換 ------------------------------------- #
+        # 位置引数(dict / 順序) を kwargs へ
         if args:
             if kwargs:
-                raise TypeError("位置引数とキーワード引数を同時には渡せません")
-            # {dict} 1 個だけ → そのまま展開
+                raise TypeError("位置・キーワード引数を同時指定できません")
             if len(args) == 1 and isinstance(args[0], dict):
                 kwargs = dict(args[0])
-            # 引数個数が一致 → 名前にマッピング
             elif len(args) == len(param_names):
                 kwargs = {param_names[i]: arg for i, arg in enumerate(args)}
             else:
-                raise TypeError(
-                    f"_validated は位置引数を取りません "
-                    f"(期待: 1 dict or {len(param_names)} values, 受信: {len(args)})"
-                )
-
+                raise TypeError("無効な位置引数数")
         try:
             model = ArgsModel(**kwargs)
         except ValidationError as e:
             raise ValueError(f"引数バリデーション失敗: {e}") from e
 
-        return await call_fn(**model.model_dump())
+        clean_kwargs = model.model_dump()
+        # 既定値補完
+        for n, p in orig_sig.parameters.items():
+            if clean_kwargs.get(n) is None and p.default is not inspect._empty:
+                clean_kwargs[n] = p.default
+        return await call_fn(**clean_kwargs)
 
-    _validated.__signature__ = sig  # type: ignore[attr-defined]
+    _validated.__signature__ = new_sig  # type: ignore[attr-defined]
     _validated.__doc__ = call_fn.__doc__
     return _validated
 
 
-# --------------------------------------------------------------------------- #
-# 外部公開 API
-# --------------------------------------------------------------------------- #
+# ──────────────── default キーを再帰的に strip ──────────────── #
+def _strip_default(obj):
+    if isinstance(obj, dict):
+        return {k: _strip_default(v) for k, v in obj.items() if k != "default"}
+    if isinstance(obj, list):
+        return [_strip_default(x) for x in obj]
+    return obj
+
+
+# ─────────────────────────── build_function_tools ─────────────────────────── #
 def build_function_tools(
     *,
     use_tools: Iterable[str] | None = None,
     exclude_tools: Iterable[str] | None = None,
 ) -> List[Callable]:
-    """
-    現在 ContextVar にある FastMCP ツール群を OpenAI Agents SDK の
-    function_tool に変換して返す。
-    """
     if use_tools and exclude_tools:
         raise ValueError("use_tools と exclude_tools は同時指定できません")
 
@@ -121,10 +136,9 @@ def build_function_tools(
     if not tools_dict:
         raise RuntimeError("No FastMCP tools available in current context")
 
-    # フィルタリング
-    if use_tools is not None:
+    if use_tools:
         selected = {n: tools_dict[n] for n in use_tools if n in tools_dict}
-    elif exclude_tools is not None:
+    elif exclude_tools:
         selected = {n: fn for n, fn in tools_dict.items() if n not in exclude_tools}
     else:
         selected = tools_dict
@@ -135,11 +149,19 @@ def build_function_tools(
     for tname, call_fn in selected.items():
         async_fn = _as_async(call_fn)
         validated_fn = _wrap_with_pydantic(async_fn)
-
         tool_obj = ft(
             name_override=tname,
             description_override=(validated_fn.__doc__ or tname),
         )(validated_fn)
+
+        # -- JSON-Schema 後処理 ---------------------------------------- #
+        schema = _strip_default(tool_obj.params_json_schema)
+
+        # required = properties の全キー（OpenAI 仕様）
+        props = schema.get("properties", {})
+        schema["required"] = list(props.keys()) if props else []
+
+        tool_obj.params_json_schema = schema
         oa_tools.append(tool_obj)
 
     return oa_tools
