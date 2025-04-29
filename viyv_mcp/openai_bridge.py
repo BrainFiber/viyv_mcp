@@ -152,6 +152,7 @@ def build_function_tools(
         tool_obj = ft(
             name_override=tname,
             description_override=(validated_fn.__doc__ or tname),
+            strict_mode=False,
         )(validated_fn)
 
         # -- JSON-Schema 後処理 ---------------------------------------- #
