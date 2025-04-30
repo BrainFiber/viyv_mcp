@@ -2,15 +2,14 @@ from fastapi import FastAPI
 from viyv_mcp.decorators import entry
 from viyv_mcp.openai_bridge import build_function_tools
 
-@entry("/webhook", use_tools=["add", "subtract"])
+@entry("/webhook", use_tags=["calc"])
 def webhook_app() -> FastAPI:
     app = FastAPI()
     @app.get("/", include_in_schema=False)
     async def ping():
 
         # --- ② OpenAI Agents SDK の Tool に変換 -------------------------------
-        oa_tools = build_function_tools(use_tools=["add", "subtract"])
-        print(oa_tools)
+        oa_tools = build_function_tools(use_tools=["add"])
 
         # --- ③ エージェント定義 ----------------------------------------------
         try:

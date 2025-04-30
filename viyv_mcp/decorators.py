@@ -3,7 +3,7 @@
 import asyncio
 import functools
 import inspect
-from typing import Any, Callable, Dict, Iterable, Optional, Union
+from typing import Any, Callable, Dict, Iterable, Optional, Union, Set
 
 from starlette.types import ASGIApp
 from fastmcp import FastMCP
@@ -27,13 +27,10 @@ def _get_mcp_from_stack() -> FastMCP:
     """
     for frame in inspect.stack():
         loc = frame.frame.f_locals
-
-        # A. register(mcp) パターン
         mcp_obj = loc.get("mcp")
         if isinstance(mcp_obj, FastMCP):
             return mcp_obj
 
-        # B. self._mcp パターン
         self_obj = loc.get("self")
         if (
             self_obj is not None
@@ -47,19 +44,50 @@ def _get_mcp_from_stack() -> FastMCP:
 
 async def _collect_tools_map(
     mcp: FastMCP,
-    use_tools: Optional[Iterable[str]],
-    exclude_tools: Optional[Iterable[str]],
+    *,
+    use_tools: Optional[Iterable[str]] = None,
+    exclude_tools: Optional[Iterable[str]] = None,
+    use_tags: Optional[Iterable[str]] = None,
+    exclude_tags: Optional[Iterable[str]] = None,
 ) -> Dict[str, Any]:
-    """use_tools / exclude_tools 指定に従って tools マップを生成"""
+    """
+    指定条件に合致するツール名 → 呼び出しラッパー の dict を返す
+
+    - use_tools / exclude_tools … ツール名でフィルタ
+    - use_tags / exclude_tags   … タグでフィルタ
+    """
     registered: Dict[str, Any] = {
         info.name: info for info in mcp._tool_manager.list_tools()
     }
-    targets = (
-        set(use_tools)
-        if use_tools is not None
-        else set(registered) - set(exclude_tools or [])
-    )
 
+    # ------- ① まず候補集合を決める -------------------------------------- #
+    selected: Set[str]
+
+    if use_tools or use_tags:
+        selected = set(use_tools or [])
+    else:
+        selected = set(registered)  # 何も指定が無ければ全ツール
+
+    # タグによる追加
+    if use_tags:
+        tagset = set(use_tags)
+        for name, info in registered.items():
+            if tagset & set(getattr(info, "tags", set())):
+                selected.add(name)
+
+    # ---------- ② 除外フィルタ ------------------------------------------- #
+    if exclude_tools:
+        selected -= set(exclude_tools)
+
+    if exclude_tags:
+        ex_tagset = set(exclude_tags)
+        selected = {
+            n
+            for n in selected
+            if not (ex_tagset & set(getattr(registered[n], "tags", set())))
+        }
+
+    # ---------- ③ 呼び出しラッパー生成 ----------------------------------- #
     async def _make_caller(tname: str):
         info = registered.get(tname)
 
@@ -100,7 +128,7 @@ async def _collect_tools_map(
 
         raise RuntimeError(f"Tool '{tname}' not found")
 
-    return {n: await _make_caller(n) for n in targets}
+    return {n: await _make_caller(n) for n in selected}
 
 
 def _inject_tools_middleware(asgi_app: ASGIApp, tools_map: Dict[str, Any]) -> ASGIApp:
@@ -119,13 +147,12 @@ def _inject_tools_middleware(asgi_app: ASGIApp, tools_map: Dict[str, Any]) -> AS
 def _wrap_callable_with_tools(
     fn: Callable[..., Any],
     mcp: FastMCP,
-    use_tools: Optional[Iterable[str]],
-    exclude_tools: Optional[Iterable[str]],
+    **collect_kwargs,
 ) -> Callable[..., Any]:
     """通常関数 / agent 用ラッパー"""
 
     async def _impl(*args, **kwargs):
-        tools_map = await _collect_tools_map(mcp, use_tools, exclude_tools)
+        tools_map = await _collect_tools_map(mcp, **collect_kwargs)
         token = _rt_set_tools(tools_map)
         try:
             if "tools" in inspect.signature(fn).parameters:
@@ -143,20 +170,14 @@ def _wrap_callable_with_tools(
 def _wrap_factory_with_tools(
     factory: Callable[..., ASGIApp],
     mcp: FastMCP,
-    use_tools: Optional[Iterable[str]],
-    exclude_tools: Optional[Iterable[str]],
+    **collect_kwargs,
 ) -> Callable[..., ASGIApp]:
-    """
-    Entry 用ファクトリラッパー
+    """Entry 用ファクトリラッパー"""
 
-    1. tools_map を生成
-    2. factory(**kwargs) で ASGI アプリ作成（必要なら tools を渡す）
-    3. ASGI アプリへミドルウェアを追加
-    """
     wants_tools = "tools" in inspect.signature(factory).parameters
 
     def _factory_wrapper(*args, **kwargs):
-        tools_map = asyncio.run(_collect_tools_map(mcp, use_tools, exclude_tools))
+        tools_map = asyncio.run(_collect_tools_map(mcp, **collect_kwargs))
 
         if wants_tools:
             kwargs["tools"] = tools_map
@@ -171,9 +192,13 @@ def _wrap_factory_with_tools(
 # --------------------------------------------------------------------------- #
 # 基本デコレータ (tool / resource / prompt)                                  #
 # --------------------------------------------------------------------------- #
-def tool(name: str | None = None, description: str | None = None):
+def tool(
+    name: str | None = None,
+    description: str | None = None,
+    tags: set[str] | None = None,
+):
     def decorator(fn: Callable):
-        _get_mcp_from_stack().tool(name=name, description=description)(fn)
+        _get_mcp_from_stack().tool(name=name, description=description, tags=tags)(fn)
         return fn
 
     return decorator
@@ -210,29 +235,35 @@ def entry(
     *,
     use_tools: Optional[Iterable[str]] = None,
     exclude_tools: Optional[Iterable[str]] = None,
+    use_tags: Optional[Iterable[str]] = None,
+    exclude_tags: Optional[Iterable[str]] = None,
 ):
     """
     指定パスに Mount されるエントリポイントを登録する。
 
-    * use_tools / exclude_tools で agent と同様にツール注入が可能
+    - ツール名 / タグの両方で include / exclude 指定が可能
     """
-    if use_tools and exclude_tools:
-        raise ValueError("use_tools と exclude_tools は同時指定できません")
+    if (use_tools and exclude_tools) or (use_tags and exclude_tags):
+        raise ValueError("include と exclude を同じキーで同時指定できません")
 
     def decorator(target: Union[ASGIApp, Callable[..., ASGIApp]]):
         try:
             mcp = _get_mcp_from_stack()
         except RuntimeError:
-            # register(mcp) 外 … ツールが要らない or 後でラップ不可能
             add_entry(path, target)
             return target
 
+        collect_kwargs = dict(
+            use_tools=use_tools,
+            exclude_tools=exclude_tools,
+            use_tags=use_tags,
+            exclude_tags=exclude_tags,
+        )
+
         if callable(target):
-            target = _wrap_factory_with_tools(target, mcp, use_tools, exclude_tools)
+            target = _wrap_factory_with_tools(target, mcp, **collect_kwargs)
         else:
-            tools_map = asyncio.run(
-                _collect_tools_map(mcp, use_tools, exclude_tools)
-            )
+            tools_map = asyncio.run(_collect_tools_map(mcp, **collect_kwargs))
             target = _inject_tools_middleware(target, tools_map)
 
         add_entry(path, target)
@@ -250,19 +281,25 @@ def agent(
     description: str | None = None,
     use_tools: Optional[Iterable[str]] = None,
     exclude_tools: Optional[Iterable[str]] = None,
+    use_tags: Optional[Iterable[str]] = None,
+    exclude_tags: Optional[Iterable[str]] = None,
 ):
-    if use_tools and exclude_tools:
-        raise ValueError("use_tools と exclude_tools は同時指定できません")
+    if (use_tools and exclude_tools) or (use_tags and exclude_tags):
+        raise ValueError("include と exclude を同じキーで同時指定できません")
+
+    collect_kwargs = dict(
+        use_tools=use_tools,
+        exclude_tools=exclude_tools,
+        use_tags=use_tags,
+        exclude_tags=exclude_tags,
+    )
 
     def decorator(fn: Callable[..., Any]):
         mcp = _get_mcp_from_stack()
         tool_name = name or fn.__name__
         tool_desc = description or (fn.__doc__ or "Viyv Agent")
 
-        _agent_impl = _wrap_callable_with_tools(
-            fn, mcp, use_tools, exclude_tools
-        )
-
+        _agent_impl = _wrap_callable_with_tools(fn, mcp, **collect_kwargs)
         _agent_impl.__viyv_agent__ = True
         mcp.tool(name=tool_name, description=tool_desc)(_agent_impl)
         return fn

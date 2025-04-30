@@ -17,7 +17,7 @@ def register(mcp: FastMCP):  # auto_register_modules から呼ばれる
     # --------------------------------------------------------------------- #
     # 1) add
     # --------------------------------------------------------------------- #
-    @tool(description="2つの数字を加算するツール")
+    @tool(description="2つの数字を加算するツール", tags={"calc"})
     def add(
         a: Annotated[int, Field(title="被加数", description="1 つ目の整数")],
         b: Annotated[int, Field(title="加数",  description="2 つ目の整数")],
@@ -28,7 +28,7 @@ def register(mcp: FastMCP):  # auto_register_modules から呼ばれる
     # --------------------------------------------------------------------- #
     # 2) subtract
     # --------------------------------------------------------------------- #
-    @tool(description="2つの数字を減算するツール")
+    @tool(description="2つの数字を減算するツール", tags={"calc"})
     def subtract(
         minuend: Annotated[int, Field(title="被減数", description="引かれる数")],
         subtrahend: Annotated[int, Field(title="減数", description="引く数")],
@@ -39,7 +39,7 @@ def register(mcp: FastMCP):  # auto_register_modules から呼ばれる
     # --------------------------------------------------------------------- #
     # 3) multiply（3 つ目は省略可でデフォルト 1）
     # --------------------------------------------------------------------- #
-    @tool(description="乗算ツール（3 つ目の引数は省略可）")
+    @tool(description="乗算ツール（3 つ目の引数は省略可）", tags={"calc"})
     def multiply(
         x: Annotated[int, Field(title="被乗数1")],
         y: Annotated[int, Field(title="被乗数2")],
@@ -51,7 +51,7 @@ def register(mcp: FastMCP):  # auto_register_modules から呼ばれる
     # --------------------------------------------------------------------- #
     # 4) average（配列入力と浮動小数出力）
     # --------------------------------------------------------------------- #
-    @tool(description="数列の平均値を求めるツール")
+    @tool(description="数列の平均値を求めるツール", tags={"calcXX"})
     def average(
         numbers: Annotated[
             List[float],
