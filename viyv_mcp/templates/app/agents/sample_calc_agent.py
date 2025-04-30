@@ -8,14 +8,14 @@ import re
 
 from viyv_mcp import agent
 from viyv_mcp.openai_bridge import build_function_tools
-# import logging, openai
+import os, json, logging, openai
 
-# from agents import Runner, enable_verbose_stdout_logging
+from agents import Runner, enable_verbose_stdout_logging
 
-# # ---- ログ設定 --------------------------
-# enable_verbose_stdout_logging()        # SDK の内部ログ
-# openai.log = "debug"                   # HTTP リクエスト／レスポンス全文
-# logging.basicConfig(level=logging.DEBUG)
+# ---- ログ設定 --------------------------
+enable_verbose_stdout_logging()        # SDK の内部ログ
+openai.log = "debug"                   # HTTP リクエスト／レスポンス全文
+logging.basicConfig(level=logging.DEBUG)
 
 
 @agent(
@@ -32,6 +32,7 @@ async def calc_agent(expression: str) -> str:
 
     # --- ② OpenAI Agents SDK の Tool に変換 -------------------------------
     oa_tools = build_function_tools(use_tools=["add", "subtract"])
+    print(oa_tools)
 
     # --- ③ エージェント定義 ----------------------------------------------
     try:

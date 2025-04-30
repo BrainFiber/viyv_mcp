@@ -1,13 +1,13 @@
 from viyv_mcp import agent
 from viyv_mcp.openai_bridge import build_function_tools
-import os, json, logging, openai
+# import os, json, logging, openai
 
-from agents import Runner, enable_verbose_stdout_logging
+# from agents import Runner, enable_verbose_stdout_logging
 
-# ---- ログ設定 --------------------------
-enable_verbose_stdout_logging()        # SDK の内部ログ
-openai.log = "debug"                   # HTTP リクエスト／レスポンス全文
-logging.basicConfig(level=logging.DEBUG)
+# # ---- ログ設定 --------------------------
+# enable_verbose_stdout_logging()        # SDK の内部ログ
+# openai.log = "debug"                   # HTTP リクエスト／レスポンス全文
+# logging.basicConfig(level=logging.DEBUG)
 
 
 @agent(
@@ -35,6 +35,8 @@ async def notion_agent(query: str) -> str:
             ),
         model="o4-mini-2025-04-16",
         tools=oa_tools,
+        # 一旦１回の検索結果を返します。本来であれば、結果の型を定義して、ほしい結果を返すようにすれば、いい
+        tool_use_behavior="stop_on_first_tool"
     )
 
     # --- ④ 実行 ----------------------------------------------------------

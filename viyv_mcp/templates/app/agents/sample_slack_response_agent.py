@@ -14,25 +14,43 @@ from viyv_mcp.openai_bridge import build_function_tools
 
 
 @agent(
-    name="slack_agent",
+    name="slack_response_agent",
     description="slack を操作するエージェントです。指示に従いslack を操作します。必ず指示を与えてください。",
     use_tags=["slack"],
 )
-async def slack_agent(
-    action_japanese: Annotated[
+async def slack_response_agent(
+    thread_ts: Annotated[
         str,
         Field(
-            title="実行するSlackアクション",
-            description="具体的に何をするのかを日本語で指示してください。例：slack チャンネル一覧の取得、スレッドに返信、過去のスレッド履歴を取得...etc.",
+            title="スレッドのタイムスタンプ",
+            description="スレッドに返信する場合は、スレッドのタイムスタンプを指定してください。",
         ),
     ],
-    instruction: Annotated[
-        str, Field(title="Slack操作の指示を具体的に日本語で、指示してください。")
+    channel_id: Annotated[
+        str,
+        Field(
+            title="チャンネルID",
+            description="スレッドに返信する場合は、スレッドのチャンネルIDを指定してください。",
+        ),
+    ],
+    user_id: Annotated[
+        str,
+        Field(
+            title="ユーザーID",
+            description="スレッドに返信する場合は、スレッドのユーザーIDを指定してください。",
+        ),
+    ],
+    reply_text: Annotated[
+        str,
+        Field(
+            title="返信内容",
+            description="スレッドに返信する内容を指定してください。",
+        ),
     ],
 ) -> str:
 
     # --- ② OpenAI Agents SDK の Tool に変換 -------------------------------
-    oa_tools = build_function_tools(exclude_tools=["slack_reply_to_thread"])
+    oa_tools = build_function_tools(use_tools=["slack_reply_to_thread"])
 
     # --- ③ エージェント定義 ----------------------------------------------
     try:
@@ -41,7 +59,7 @@ async def slack_agent(
         return "Agents SDK がインストールされていません (`pip install openai-agents-python`)"
 
     agent_ = OAAgent(
-        name="SlackAgent",
+        name="SlackResponseAgent",
         instructions=(
             "あなたは、指示に従い、slack ワークスペースを操作する AI アシスタントです。",
             "",
@@ -52,7 +70,8 @@ async def slack_agent(
 
     # --- ④ 実行 ----------------------------------------------------------
     try:
-        result = await Runner.run(agent_, f"アクション：{action_japanese} 指示：{instruction}")
+        result = await Runner.run(agent_, f"スレッドのタイムスタンプ：{thread_ts} チャンネルID：{channel_id} ユーザーID：{user_id} 返信内容：{reply_text}")
+        # 
         return str(result.final_output)
     except Exception as exc:
         return f"ChatGPT への問い合わせでエラーが発生しました: {exc}"

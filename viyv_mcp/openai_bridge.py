@@ -129,20 +129,47 @@ def build_function_tools(
     use_tools: Iterable[str] | None = None,
     exclude_tools: Iterable[str] | None = None,
 ) -> List[Callable]:
-    if use_tools and exclude_tools:
-        raise ValueError("use_tools と exclude_tools は同時指定できません")
+    """
+    FastMCP 登録ツールから OpenAI Agents SDK 用の FunctionTool を生成するユーティリティ。
 
+    Parameters
+    ----------
+    use_tools : Iterable[str] | None, optional
+        利用したいツール名を列挙。None の場合は全ツールが対象になる。
+    exclude_tools : Iterable[str] | None, optional
+        除外したいツール名を列挙。None の場合は除外なし。
+
+    Both ``use_tools`` and ``exclude_tools`` を同時に指定した場合は、
+
+    1. ``use_tools`` でホワイトリストを作成
+    2. その後 ``exclude_tools`` でブラックリストを適用
+
+    という手順でフィルタリングされます。
+    """
+    # ───── ① FastMCP 側のツール一覧取得 ─────
     tools_dict: Dict[str, Callable] = get_tools()
     if not tools_dict:
         raise RuntimeError("No FastMCP tools available in current context")
 
+    selected: Dict[str, Callable]
+
+    # ▶️ 変更点 ───────────────
+    #  ホワイトリスト（use_tools）→ ブラックリスト（exclude_tools）の順で適用
+    #  両方 None の場合は全ツール
+    #  ───────────────────────
     if use_tools:
         selected = {n: tools_dict[n] for n in use_tools if n in tools_dict}
-    elif exclude_tools:
-        selected = {n: fn for n, fn in tools_dict.items() if n not in exclude_tools}
     else:
-        selected = tools_dict
+        selected = dict(tools_dict)  # 全ツールを複製
 
+    if exclude_tools:
+        for n in exclude_tools:
+            selected.pop(n, None)  # 存在しない場合は無視
+
+    if not selected:
+        raise ValueError("フィルタリングの結果、使用可能なツールが 0 件になりました")
+
+    # ───── ② OpenAI FunctionTool 化 ─────
     ft = _ensure_function_tool()
     oa_tools: List[Callable] = []
 
