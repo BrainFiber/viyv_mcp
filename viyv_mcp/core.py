@@ -10,6 +10,7 @@ from viyv_mcp.app.lifespan import app_lifespan_context
 from viyv_mcp.app.registry import auto_register_modules
 from viyv_mcp.app.bridge_manager import init_bridges, close_bridges
 from viyv_mcp.app.config import Config
+from viyv_mcp.app.entry_registry import list_entries
 
 logger = logging.getLogger(__name__)
 
@@ -24,16 +25,6 @@ class ViyvMCP:
         self._bridges = None
 
     # ---------- パーツ ---------- #
-
-    @staticmethod
-    def _create_health_app() -> FastAPI:
-        """/health だけを返す FastAPI"""
-        app = FastAPI()
-        @app.get("/", include_in_schema=False)
-        async def health_check():
-            return {"status": "ok"}
-        return app
-
     def _create_mcp_server(self) -> FastMCP:
         """FastMCP を生成し、ツール等を登録"""
         mcp = FastMCP(self.server_name, lifespan=app_lifespan_context)
@@ -43,6 +34,7 @@ class ViyvMCP:
         auto_register_modules(mcp, "app.resources")
         auto_register_modules(mcp, "app.prompts")
         auto_register_modules(mcp, "app.agents")
+        auto_register_modules(mcp, "app.entries")
 
         logger.info("ViyvMCP: MCP server created & local modules registered.")
         return mcp
@@ -50,7 +42,6 @@ class ViyvMCP:
     # ---------- Starlette 合成 ---------- #
 
     def _create_asgi_app(self):
-        health_app = self._create_health_app()
         self._mcp = self._create_mcp_server()
         sse_subapp = self._mcp.sse_app()          # ← SSE・messages 用
 
@@ -63,14 +54,18 @@ class ViyvMCP:
             if self._bridges:
                 await close_bridges(self._bridges)
 
+        routes = [
+            Mount(path, app=factory() if callable(factory) else factory)
+            for path, factory in list_entries()
+        ]
+
+        routes.append(Mount("/", app=sse_subapp))
+
         # `/health` を先に、`/` (SSE) を後に並べる
         app = Starlette(
             on_startup=[startup],
             on_shutdown=[shutdown],
-            routes=[
-                Mount("/health", app=health_app),   # → http://host:port/health
-                Mount("/",        app=sse_subapp),  # → /sse, /messages/…
-            ],
+            routes=routes,
         )
         return app
 

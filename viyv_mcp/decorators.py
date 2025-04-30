@@ -3,6 +3,10 @@ import functools
 import inspect
 from typing import Any, Callable, Coroutine, Dict, Iterable, List, Optional
 
+from viyv_mcp.app.entry_registry import add_entry
+from starlette.types import ASGIApp
+from typing import Callable, Union
+
 from viyv_mcp.agent_runtime import (
     get_tools as _rt_get_tools,
     set_tools as _rt_set_tools,
@@ -53,6 +57,15 @@ def prompt(name: str | None = None, description: str | None = None):
         return fn
     return decorator
 
+def entry(path: str):
+    """
+    指定パスに Mount されるエントリポイントを登録する。
+    引数は (1) ASGI アプリインスタンス  か (2) ASGI アプリを返すファクトリ。
+    """
+    def decorator(target: Union[ASGIApp, Callable[[], ASGIApp]]):
+        add_entry(path, target)
+        return target
+    return decorator
 
 # --------------------------------------------------------------------------- #
 # agent デコレータ                                                             #
