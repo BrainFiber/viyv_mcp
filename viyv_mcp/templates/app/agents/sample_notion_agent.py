@@ -11,14 +11,15 @@ logging.basicConfig(level=logging.DEBUG)
 
 
 @agent(
-    name="slack_agent",
-    description="slack チャンネル一覧を取得するツール",
-    use_tags=["slack"],
+    name="notion_agent",
+    description="Notion ページを取得するツール",
+    use_tools=["API-post-search","API-retrieve-a-page"],
 )
-async def slack_agent(query: str) -> str:
+async def notion_agent(query: str) -> str:
 
     # --- ② OpenAI Agents SDK の Tool に変換 -------------------------------
-    oa_tools = build_function_tools(use_tools=["slack_list_channels"])
+    oa_tools = build_function_tools(use_tools=["API-post-search", "API-retrieve-a-page"])
+    print(oa_tools)
 
     # --- ③ エージェント定義 ----------------------------------------------
     try:
@@ -27,10 +28,11 @@ async def slack_agent(query: str) -> str:
         return "Agents SDK がインストールされていません (`pip install openai-agents-python`)"
 
     agent_ = OAAgent(
-        name="SlackAgent",
+        name="NotionAgent",
         instructions=(
-            "あなたは、slack チャンネル一覧を取得するツールです。Tools を使って、slack チャンネル一覧を取得してください。"
-        ),
+            "あなたは、Notion ページを取得するツールです。Tools を使って、Notion ページを取得してください。",
+            "再帰的に Notion ページを取得し、詳細の情報を取得してください。",
+            ),
         model="o4-mini-2025-04-16",
         tools=oa_tools,
     )

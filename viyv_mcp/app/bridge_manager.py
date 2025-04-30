@@ -4,7 +4,7 @@ import os
 import json
 import glob
 import logging
-from typing import List, Tuple
+from typing import List, Tuple, Set
 
 from mcp import ClientSession, types
 from mcp.client.stdio import stdio_client, StdioServerParameters
@@ -15,16 +15,14 @@ logger = logging.getLogger(__name__)
 
 async def init_bridges(
     mcp: FastMCP,
-    config_dir: str
+    config_dir: str,
 ) -> List[Tuple[str, "stdio_client", ClientSession]]:
     """
-    config_dir/*.json を走査し、外部MCPサーバー(stdio)をサブプロセス起動して
-    list_tools / list_resources / list_prompts を取得。
-    各項目を mcp に @tool / @resource / @prompt として動的登録する。
-
+    config_dir/*.json を走査し、外部 MCP サーバー(stdio)を起動して
+    list_tools / list_resources / list_prompts を取得し、FastMCP に動的登録。
     戻り値: [(server_name, stdio_ctx, session), ...]
     """
-    bridges = []
+    bridges: List[Tuple[str, "stdio_client", ClientSession]] = []
 
     for cfg_file in glob.glob(os.path.join(config_dir, "*.json")):
         try:
@@ -34,57 +32,48 @@ async def init_bridges(
             logger.error(f"Failed to load {cfg_file}: {e}")
             continue
 
-        name = cfg.get("name", "unknown")
-        cmd = cfg["command"]
-        args = cfg.get("args", [])
+        name         = cfg.get("name", "external")
+        cmd          = cfg["command"]
+        args         = cfg.get("args", [])
+        cfg_tags: Set[str] = set(cfg.get("tags", []))            # ★ 追加: config 由来タグ
+        json_env     = cfg.get("env", {})
 
-        # JSONのenvセクションを読み込み
-        json_env = cfg.get("env", {})
-        # OS環境変数を優先し、無ければjson_envの値を使う
-        merged_env = {}
-        for key, default_val in json_env.items():
-            merged_env[key] = os.environ.get(key, default_val)
+        # 環境変数マージ（OS が優先）
+        env_merged = {k: os.environ.get(k, v) for k, v in json_env.items()}
 
         logger.info(f"=== Starting external MCP server '{name}' ===")
 
-        # サブプロセス起動用パラメータ
-        server_params = StdioServerParameters(
-            command=cmd,
-            args=args,
-            env=merged_env or None
-        )
+        server_params = StdioServerParameters(command=cmd, args=args, env=env_merged or None)
 
-        # サブプロセス起動
+        # --- プロセス / セッション確立 ------------------------------------------------
         stdio_ctx = stdio_client(server_params)
         read_stream, write_stream = await stdio_ctx.__aenter__()
 
-        # MCPクライアントセッション
         session = ClientSession(read_stream, write_stream)
         await session.__aenter__()
         await session.initialize()
         logger.info(f"[{name}] MCP initialize() done")
 
-        # Tools
+        # ----------------------- Tools ----------------------------------------------
         tools = await _safe_list_tools(session, server_name=name)
         for t in tools:
-            _register_tool_bridge(mcp, session, t)
+            _register_tool_bridge(mcp, session, t, cfg_tags)     # ← タグを渡す
         logger.info(f"[{name}] Tools => {[x.name for x in tools]}")
 
-        # Resources
+        # ----------------------- Resources ------------------------------------------
         resources = await _safe_list_resources(session, server_name=name)
+        for r in resources:
+            _register_resource_bridge(mcp, session, r)
         if resources:
             logger.info(f"[{name}] Resources => {[r.uriTemplate for r in resources]}")
-            for r in resources:
-                _register_resource_bridge(mcp, session, r)
 
-        # Prompts
+        # ----------------------- Prompts --------------------------------------------
         prompts = await _safe_list_prompts(session, server_name=name)
+        for p in prompts:
+            _register_prompt_bridge(mcp, session, p)
         if prompts:
             logger.info(f"[{name}] Prompts => {[p.name for p in prompts]}")
-            for p in prompts:
-                _register_prompt_bridge(mcp, session, p)
 
-        # initしたサブプロセス/セッションをリストに保存
         bridges.append((name, stdio_ctx, session))
 
     return bridges
@@ -270,7 +259,7 @@ async def _safe_list_prompts(session: ClientSession, server_name: str) -> List[t
 # ----------------------------------------------------------------------------
 # 実際の登録 (tool / resource / prompt)
 # ----------------------------------------------------------------------------
-def _register_tool_bridge(mcp: FastMCP, session: ClientSession, tool_info: types.Tool):
+def _register_tool_bridge(mcp: FastMCP, session: ClientSession, tool_info: types.Tool, cfg_tags: Set[str] | None = None,):
     """
     tool_info から inputSchema を解析し、kwargs を定義して bridged_tool を登録する
 
@@ -347,7 +336,7 @@ def _register_tool_bridge(mcp: FastMCP, session: ClientSession, tool_info: types
     bridged_tool.__signature__ = inspect.Signature(params)
     bridged_tool.__doc__ = desc
 
-    mcp.add_tool(name=tool_name, fn=bridged_tool, description=desc)
+    mcp.add_tool(name=tool_name, fn=bridged_tool, description=desc, tags=cfg_tags)
 
 
 def _register_resource_bridge(mcp: FastMCP, session: ClientSession, rinfo: types.Resource):

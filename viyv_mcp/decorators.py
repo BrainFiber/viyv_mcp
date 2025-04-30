@@ -143,14 +143,33 @@ def _inject_tools_middleware(asgi_app: ASGIApp, tools_map: Dict[str, Any]) -> AS
 
     return _wrapper
 
+# --------------------------------------------------------------------------- #
+# Middleware (各リクエスト時に最新ツールを取得)                               #
+# --------------------------------------------------------------------------- #
+def _dynamic_tools_middleware(
+    asgi_app: ASGIApp,
+    mcp: FastMCP,
+    collect_kwargs: Dict[str, Any],
+) -> ASGIApp:
+    """毎リクエストで最新ツールマップを取得し ContextVar に注入するミドルウェア"""
+
+    async def _wrapper(scope, receive, send):
+        tools_map = await _collect_tools_map(mcp, **collect_kwargs)
+        token = _rt_set_tools(tools_map)
+        try:
+            await asgi_app(scope, receive, send)
+        finally:
+            _rt_reset_tools(token)
+
+    return _wrapper
+
+
 
 def _wrap_callable_with_tools(
     fn: Callable[..., Any],
     mcp: FastMCP,
     **collect_kwargs,
 ) -> Callable[..., Any]:
-    """通常関数 / agent 用ラッパー"""
-
     async def _impl(*args, **kwargs):
         tools_map = await _collect_tools_map(mcp, **collect_kwargs)
         token = _rt_set_tools(tools_map)
@@ -167,23 +186,22 @@ def _wrap_callable_with_tools(
     return _impl
 
 
-def _wrap_factory_with_tools(
+def _wrap_factory_with_tools(                        # ← 差し替え
     factory: Callable[..., ASGIApp],
     mcp: FastMCP,
     **collect_kwargs,
 ) -> Callable[..., ASGIApp]:
-    """Entry 用ファクトリラッパー"""
+    """Entry 用ファクトリラッパー（毎リクエストでツール更新）"""
 
     wants_tools = "tools" in inspect.signature(factory).parameters
 
     def _factory_wrapper(*args, **kwargs):
-        tools_map = asyncio.run(_collect_tools_map(mcp, **collect_kwargs))
-
+        init_tools_map = asyncio.run(_collect_tools_map(mcp, **collect_kwargs))
         if wants_tools:
-            kwargs["tools"] = tools_map
+            kwargs["tools"] = init_tools_map
 
         asgi_app = factory(*args, **kwargs)
-        return _inject_tools_middleware(asgi_app, tools_map)
+        return _dynamic_tools_middleware(asgi_app, mcp, collect_kwargs)
 
     functools.update_wrapper(_factory_wrapper, factory)
     return _factory_wrapper
@@ -238,13 +256,8 @@ def entry(
     use_tags: Optional[Iterable[str]] = None,
     exclude_tags: Optional[Iterable[str]] = None,
 ):
-    """
-    指定パスに Mount されるエントリポイントを登録する。
-
-    - ツール名 / タグの両方で include / exclude 指定が可能
-    """
     if (use_tools and exclude_tools) or (use_tags and exclude_tags):
-        raise ValueError("include と exclude を同じキーで同時指定できません")
+        raise ValueError("include と exclude を同時指定できません")
 
     def decorator(target: Union[ASGIApp, Callable[..., ASGIApp]]):
         try:
@@ -263,14 +276,12 @@ def entry(
         if callable(target):
             target = _wrap_factory_with_tools(target, mcp, **collect_kwargs)
         else:
-            tools_map = asyncio.run(_collect_tools_map(mcp, **collect_kwargs))
-            target = _inject_tools_middleware(target, tools_map)
+            target = _dynamic_tools_middleware(target, mcp, collect_kwargs)
 
         add_entry(path, target)
         return target
 
     return decorator
-
 
 # --------------------------------------------------------------------------- #
 # agent デコレータ                                                             #
@@ -285,7 +296,7 @@ def agent(
     exclude_tags: Optional[Iterable[str]] = None,
 ):
     if (use_tools and exclude_tools) or (use_tags and exclude_tags):
-        raise ValueError("include と exclude を同じキーで同時指定できません")
+        raise ValueError("include と exclude を同時指定できません")
 
     collect_kwargs = dict(
         use_tools=use_tools,
