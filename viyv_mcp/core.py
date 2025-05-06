@@ -1,5 +1,8 @@
 # core.py
 import logging
+import os
+import pathlib
+from fastapi.staticfiles import StaticFiles
 from starlette.applications import Starlette
 from starlette.routing import Mount
 
@@ -43,7 +46,16 @@ class ViyvMCP:
 
     def _create_asgi_app(self):
         self._mcp = self._create_mcp_server()
-        sse_subapp = self._mcp.sse_app()          # ← SSE・messages 用
+        sse_subapp = self._mcp.sse_app()  # ← SSE・messages 用
+
+        # ---------- 画像などの静的ファイル公開用 ---------- #
+        #   - デフォルト: <project_root>/static/images
+        #   - 変更したい場合は環境変数 STATIC_DIR で上書き
+        STATIC_DIR = os.getenv(
+            "STATIC_DIR",
+            os.path.join(os.getcwd(), "static", "images"),
+        )
+        pathlib.Path(STATIC_DIR).mkdir(parents=True, exist_ok=True)
 
         async def startup():
             logger.info("=== ViyvMCP startup: bridging external MCP servers ===")
@@ -58,6 +70,15 @@ class ViyvMCP:
             Mount(path, app=factory() if callable(factory) else factory)
             for path, factory in list_entries()
         ]
+
+        # 先に静的ファイルをマウント（/static/...）
+        routes.append(
+            Mount(
+                "/static",
+                app=StaticFiles(directory=os.path.dirname(STATIC_DIR), html=False),
+                name="static",
+            )
+        )
 
         routes.append(Mount("/", app=sse_subapp))
 
