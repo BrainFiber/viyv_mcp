@@ -23,6 +23,8 @@ dependencies = [
   "fastapi>=0.115.12",
   "openai-agents>=0.0.13",
   "pydantic>=2",
+  "slack-bolt>=1.23.0",
+  "aiohttp>=3.11.18",
 ]
 
 # CLIエントリポイント設定

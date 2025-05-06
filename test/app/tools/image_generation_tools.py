@@ -109,7 +109,7 @@ def register(mcp: FastMCP):
             Literal["1024x1024", "1536x1024", "1024x1536", "auto"], Field(default="1024x1024")
         ] = "1024x1024",
         quality: Annotated[
-            Literal["low", "medium", "high", "auto"], Field(default="low")
+            Literal["low", "medium", "high", "auto"], Field(default="high")
         ] = "low",
         n: Annotated[int, Field(ge=1, le=4)] = 1,
         background: Annotated[

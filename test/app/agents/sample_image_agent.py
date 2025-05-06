@@ -65,7 +65,7 @@ async def image_agent(
     quality: Annotated[
         Optional[str],
         Field(
-            title="品質 low / medium / high / auto（省略可）※コスト削減のため low を指定してください。",
+            title="品質 low / medium / high / auto（省略可",
             description="low / medium / high / auto（省略可）",
         ),
     ] = "auto",

@@ -7,3 +7,5 @@ viyv_mcp.egg-info/entry_points.txt
 viyv_mcp.egg-info/requires.txt
 viyv_mcp.egg-info/top_level.txt
 viyv_mcp.egg-info/
+viyv_mcp/__pycache__/core.cpython-312.pyc
+test/static
