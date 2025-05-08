@@ -30,7 +30,7 @@ UPLOAD_DIR = os.getenv("UPLOAD_DIR", os.path.join(os.getcwd(), "static", "upload
 
 
 # ---------------------------------------------------------------------- #
-@entry("/slack3", use_tools=["notion_agent", "image_agent"])
+@entry("/slack3", use_tools=["notion_agent", "image_agent", "file_analysis_agent", "image_analysis_agent"])
 def slack_entry():
     """Slack endpoint factory"""
 
@@ -42,13 +42,24 @@ def slack_entry():
     )
 
     # ---- メンション後段ロジック ---------------------------------------- #
-    async def mention_handler(event, text, image_urls, say, bolt_app, adp: SlackAdapter):
+    async def mention_handler(
+        event,
+        text,
+        image_urls,
+        file_urls,          # ★ 追加
+        say,
+        bolt_app,
+        adp: SlackAdapter,
+    ):
         # 1) 会話履歴
         history, last_id = await adp.build_thread_messages(event, bolt_app.client)
 
         # 2) messages 構築
-        saved_urls_text = (
+        saved_images_text = (
             "\n".join(f"添付画像 URL: {u}" for u in image_urls) if image_urls else ""
+        )
+        saved_files_text = (
+            "\n".join(f"添付ファイル URL: {u}" for u in file_urls) if file_urls else ""
         )
         current_user_msg = {
             "role": "user",
@@ -57,7 +68,7 @@ def slack_entry():
                 f"ユーザid: {event.get('user','')}\n"
                 f"チャンネルid: {event.get('channel','')}\n"
                 f"スレッドのタイムスタンプ: {event.get('event_ts','')}\n"
-                f"{saved_urls_text}"
+                f"{saved_images_text}\n{saved_files_text}"
             ),
         }
 
