@@ -13,6 +13,27 @@ import inspect
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Resource モデルのフィールドを動的に確認して互換レイヤを作る
+# ---------------------------------------------------------------------------
+_RESOURCE_FIELDS = set(types.Resource.__fields__.keys())
+_RESOURCE_USES_URI_TEMPLATE = "uriTemplate" in _RESOURCE_FIELDS          # 旧仕様
+_RESOURCE_USES_URI = "uri" in _RESOURCE_FIELDS                           # 新仕様
+_RESOURCE_USES_NAME = "name" in _RESOURCE_FIELDS
+
+def _build_resource(uri_value: str, desc: str = "", name: str | None = None) -> types.Resource:
+    """
+    SDK のバージョン差異を吸収して Resource インスタンスを生成
+    """
+    kwargs: dict = {"description": desc}
+    if _RESOURCE_USES_URI_TEMPLATE:
+        kwargs["uriTemplate"] = uri_value
+    elif _RESOURCE_USES_URI:
+        kwargs["uri"] = uri_value
+    if _RESOURCE_USES_NAME:
+        kwargs["name"] = name or uri_value
+    return types.Resource(**kwargs)
+
 async def init_bridges(
     mcp: FastMCP,
     config_dir: str,
@@ -165,7 +186,7 @@ async def _safe_list_tools(session: ClientSession, server_name: str) -> List[typ
 async def _safe_list_resources(session: ClientSession, server_name: str) -> List[types.Resource]:
     """
     list_resources() を呼び出し、types.Resource に変換して返す。
-    Method not found等で失敗したら空リストを返す。
+    SDK のバージョン差異を透過的に処理する。
     """
     try:
         raw_resources = await session.list_resources()
@@ -173,36 +194,29 @@ async def _safe_list_resources(session: ClientSession, server_name: str) -> List
         logger.warning(f"[{server_name}] list_resources error => {e}")
         return []
 
-    resources_converted = []
+    resources_converted: List[types.Resource] = []
     for item in raw_resources:
-        if isinstance(item, types.Resource):
-            resources_converted.append(item)
+        try:
+            if isinstance(item, types.Resource):
+                # すでに正しい型
+                resources_converted.append(item)
 
-        elif isinstance(item, dict):
-            uri_template = item.get("uriTemplate", "unknown://{id}")
-            desc = item.get("description", "")
-            r = types.Resource(
-                uriTemplate=uri_template,
-                description=desc,
-            )
-            resources_converted.append(r)
+            elif isinstance(item, dict):
+                uri_val = item.get("uriTemplate") or item.get("uri") or "unknown://{id}"
+                desc = item.get("description", "")
+                name = item.get("name")
+                resources_converted.append(_build_resource(uri_val, desc, name))
 
-        elif isinstance(item, tuple):
-            # 例: ("slack://{channel}", "desc")
-            uri_template = str(item[0]) if len(item) > 0 else "unknown://{id}"
-            desc = str(item[1]) if len(item) > 1 else ""
-            r = types.Resource(
-                uriTemplate=uri_template,
-                description=desc,
-            )
-            resources_converted.append(r)
-        else:
-            logger.warning(f"[{server_name}] Unexpected resource format: {item}")
-            r = types.Resource(
-                uriTemplate=f"unknown://{len(resources_converted)+1}",
-                description=str(item),
-            )
-            resources_converted.append(r)
+            elif isinstance(item, tuple):
+                uri_val = str(item[0]) if len(item) > 0 else "unknown://{id}"
+                desc = str(item[1]) if len(item) > 1 else ""
+                resources_converted.append(_build_resource(uri_val, desc))
+
+            else:
+                logger.warning(f"[{server_name}] Unexpected resource format: {item}")
+                resources_converted.append(_build_resource(f"unknown://{len(resources_converted)+1}", str(item)))
+        except Exception as e:
+            logger.warning(f"[{server_name}] Resource convert error => {e} (raw={item})")
 
     return resources_converted
 

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "viyv_mcp"
-version = "0.1.0"
+version = "0.1.2"
 description = "A simple wrapper library for FastMCP + Starlette"
 authors = [
     { name="Your Name", email="your_email@example.com" }
