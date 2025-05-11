@@ -101,9 +101,16 @@ def _wrap_with_pydantic(call_fn: Callable) -> Callable[..., Coroutine]:
                 Field(None, title=name, json_schema_extra={"nullable": True}),
             )
 
-    ArgsModel: type[BaseModel] = create_model(  # type: ignore
+    ArgsModel: type[BaseModel] = create_model(          # type: ignore
         f"{call_fn.__name__}_args",
-        __config__=type("Config", (), {"extra": "forbid"}),
+        __config__=type(                                # ★ ここだけ変更
+            "Config",
+            (),
+            {
+                "extra": "forbid",
+                "arbitrary_types_allowed": True,  # ← 独自型を許可
+            },
+        ),
         **fields,
     )
 

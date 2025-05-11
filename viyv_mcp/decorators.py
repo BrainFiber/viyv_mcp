@@ -290,11 +290,31 @@ def tool(
             return await impl(*args, **kwargs) if inspect.iscoroutinefunction(impl) else impl(*args, **kwargs)
 
         #   シグネチャから wrapper を削除
+        orig_sig = inspect.signature(impl)
         params_no_wrapper = [
-            p for p in inspect.signature(impl).parameters.values()
+            inspect.Parameter(
+                p.name,
+                kind=inspect.Parameter.KEYWORD_ONLY,
+                annotation=p.annotation,
+                default=p.default,
+            )
+            for p in orig_sig.parameters.values()
             if p.name != "wrapper"
         ]
         _schema_stub.__signature__ = inspect.Signature(params_no_wrapper)  # type: ignore[attr-defined]
+
+        # ── ★ ここが今回の追加ポイント ★ ─────────────────────
+        # get_type_hints() が参照する __annotations__ を補完
+        _schema_stub.__annotations__ = {
+            p.name: p.annotation
+            for p in params_no_wrapper
+            if p.annotation is not inspect._empty
+        }
+        # 戻り値型があればコピー
+        if orig_sig.return_annotation is not inspect._empty:
+            _schema_stub.__annotations__["return"] = orig_sig.return_annotation
+        # ──────────────────────────────────────────────
+
         _schema_stub.__doc__ = tool_desc
         #   Agents から参照できるよう実体を保持
         _schema_stub.__original_tool_fn__ = impl       # ← ここがポイント
@@ -394,9 +414,39 @@ def agent(
         tool_name = name or fn.__name__
         tool_desc = description or (fn.__doc__ or "Viyv Agent")
 
+        # --- 実体（wrapper 混入版） ----------
         _agent_impl = _wrap_callable_with_tools(fn, mcp, **collect_kwargs)
         _agent_impl.__viyv_agent__ = True
-        mcp.tool(name=tool_name, description=tool_desc)(_agent_impl)
+
+        # --- JSON-Schema 生成用スタブ ----------
+        async def _schema_stub(*args, **kwargs):
+            # wrapper を受け取らないダミー
+            return await _agent_impl(*args, **kwargs)
+
+        orig_sig = inspect.signature(_agent_impl)
+        params_no_wrapper = [
+            inspect.Parameter(
+                p.name,
+                kind=inspect.Parameter.KEYWORD_ONLY,
+                annotation=p.annotation,
+                default=p.default,
+            )
+            for p in orig_sig.parameters.values()
+            if p.name != "wrapper"
+        ]
+        _schema_stub.__signature__ = inspect.Signature(params_no_wrapper)  # type: ignore[attr-defined]
+        _schema_stub.__annotations__ = {
+            p.name: p.annotation
+            for p in params_no_wrapper
+            if p.annotation is not inspect._empty
+        }
+        if orig_sig.return_annotation is not inspect._empty:
+            _schema_stub.__annotations__["return"] = orig_sig.return_annotation
+        _schema_stub.__doc__ = tool_desc
+        _schema_stub.__original_tool_fn__ = _agent_impl
+
+        # --- FastMCP 登録 --------------------
+        mcp.tool(name=tool_name, description=tool_desc)(_schema_stub)
         return fn
 
     return decorator

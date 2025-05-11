@@ -321,7 +321,7 @@ def _register_tool_bridge(mcp: FastMCP, session: ClientSession, tool_info: types
             annotated_type = Annotated[base_type, Field(field_default, description=description_field)]
             param = inspect.Parameter(
                 name,
-                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                kind=inspect.Parameter.KEYWORD_ONLY, 
                 default=(default_val if default_val is not inspect.Parameter.empty else inspect.Parameter.empty),
                 annotation=annotated_type
             )
@@ -348,6 +348,15 @@ def _register_tool_bridge(mcp: FastMCP, session: ClientSession, tool_info: types
 
     bridged_tool = _impl
     bridged_tool.__signature__ = inspect.Signature(params)
+
+    # ★ __annotations__ を補完して型ヒント解決エラーを防ぐ
+    from typing import Any
+    bridged_tool.__annotations__ = {
+        p.name: (p.annotation if p.annotation is not inspect._empty else Any)
+        for p in params
+    }
+    bridged_tool.__annotations__["return"] = Any
+
     bridged_tool.__doc__ = desc
 
     mcp.add_tool(name=tool_name, fn=bridged_tool, description=desc, tags=cfg_tags)
@@ -375,10 +384,42 @@ def _register_prompt_bridge(mcp: FastMCP, session: ClientSession, pinfo: types.P
     prompt_name = pinfo.name
     desc = pinfo.description or f"Bridged external prompt '{prompt_name}'"
 
-    @mcp.prompt(name=prompt_name)
-    async def bridged_prompt(**kwargs):
-        str_args = {k: str(v) for k, v in kwargs.items()}
-        result = await session.get_prompt(prompt_name, arguments=str_args)
+    # ------------------------------------------------------------
+    # 1) Prompt 引数をシグネチャ化  (keyword-only が必須)
+    # ------------------------------------------------------------
+    params: list[inspect.Parameter] = []
+    annos: dict[str, type] = {}
+
+    # pinfo.arguments は OpenAPI 風の [{"name": "...", "type": "..."}, ...] を想定
+    json2py = {"string": str, "integer": int, "boolean": bool, "number": float}
+    for arg in (pinfo.arguments or []):
+        name = arg.get("name") if isinstance(arg, dict) else str(arg)
+        py_type = json2py.get(arg.get("type", "string"), str) if isinstance(arg, dict) else str
+
+        param = inspect.Parameter(
+            name=name,
+            kind=inspect.Parameter.KEYWORD_ONLY,      # FastMCP 2.3 requirement
+            default=inspect.Parameter.empty,
+            annotation=py_type,
+        )
+        params.append(param)
+        annos[name] = py_type
+
+    # ------------------------------------------------------------
+    # 2) 本体実装
+    # ------------------------------------------------------------
+    async def _impl(**kwargs):
+        result = await session.get_prompt(
+            prompt_name,
+            arguments={k: str(v) for k, v in kwargs.items()},
+        )
         return result.messages
 
-    bridged_prompt.__doc__ = desc
+    _impl.__doc__ = desc
+    _impl.__signature__ = inspect.Signature(params)
+    _impl.__annotations__ = annos | {"return": list}     # 型ヒントを補完
+
+    # ------------------------------------------------------------
+    # 3) 登録
+    # ------------------------------------------------------------
+    mcp.prompt(name=prompt_name, description=desc)(_impl)
