@@ -1,21 +1,31 @@
 """
 Slack Bolt + FastAPI を『ひとことで呼べる』アダプタ。
 
-* mention_handler(event, text, image_urls, file_urls, say, bolt_app, adapter)
+* mention_handler(
+      event, text, image_urls, file_urls,
+      say, bolt_app, adapter, run_ctx        ← ★ run_ctx を追加
+  )
     を登録すると、@メンション時の後段ロジックだけを書けば済む。
 """
 from __future__ import annotations
-
-from typing import Annotated, Awaitable, Callable, List, Optional, Tuple
 
 import asyncio
 import logging
 import os
 import pathlib
 import re
-import uuid
-from io import BytesIO
 from urllib.parse import urlparse
+import uuid
+from dataclasses import dataclass
+from io import BytesIO
+from typing import (
+    Annotated,
+    Awaitable,
+    Callable,
+    List,
+    Optional,
+    Tuple,
+)
 
 import aiohttp
 import imghdr
@@ -25,6 +35,7 @@ from pydantic import Field
 from slack_bolt.async_app import AsyncApp
 from slack_bolt.adapter.fastapi.async_handler import AsyncSlackRequestHandler
 from slack_sdk.web.async_client import AsyncWebClient
+from typing import Any
 from viyv_mcp.decorators import tool  # ★ 追加
 from agents import function_tool
 
@@ -34,11 +45,40 @@ PROMPT_START = "###prompt_start###"
 PROMPT_END = "###prompt_end###"
 
 
+# ────────────────────────────────────────────────────────────────────────
+#  SlackRunContext  (Agent SDK の local context 用)
+# ────────────────────────────────────────────────────────────────────────
+@dataclass
+class SlackRunContext:
+    channel: str
+    thread_ts: str
+    client: Any
+    progress_ts: Optional[str] = None  # chat.postMessage の ts を保持
+
+    async def post_start_message(self) -> None:
+        """スレッドに『処理を開始しました…』を投稿して ts を保持"""
+        resp = await self.client.chat_postMessage(
+            channel=self.channel,
+            thread_ts=self.thread_ts,
+            text=":hourglass_flowing_sand: 処理を開始しました…",
+        )
+        self.progress_ts = resp["ts"]
+
+    async def update_progress(self, text: str) -> None:
+        """chat.update で進捗メッセージを上書き"""
+        if not self.progress_ts:
+            await self.post_start_message()
+        await self.client.chat_update(
+            channel=self.channel,
+            ts=self.progress_ts,
+            text=text,
+        )
+
+
 class SlackAdapter:
     """Slack エンドポイントを FastAPI サブアプリとして提供"""
 
     # ---------- 初期化 -------------------------------------------------- #
-
     def __init__(
         self,
         *,
@@ -67,7 +107,16 @@ class SlackAdapter:
         #               ▼ image_urls と file_urls を分離
         self._handler: (
             Callable[
-                [dict, str, List[str], List[str], Callable, AsyncApp, "SlackAdapter"],
+                [
+                    dict,             # event
+                    str,              # text
+                    List[str],        # image_urls
+                    List[str],        # file_urls
+                    Callable,         # say
+                    AsyncApp,         # bolt_app
+                    "SlackAdapter",   # adapter
+                    "SlackRunContext" # run_ctx
+                ],
                 Awaitable[None],
             ]
             | None
@@ -78,11 +127,19 @@ class SlackAdapter:
         self._register_events()
 
     # ---------- 外部 API ----------------------------------------------- #
-
     def register_mention_handler(
         self,
         handler: Callable[
-            [dict, str, List[str], List[str], Callable, AsyncApp, "SlackAdapter"],
+            [
+                dict,
+                str,
+                List[str],
+                List[str],
+                Callable,
+                AsyncApp,
+                "SlackAdapter",
+                SlackRunContext,
+            ],
             Awaitable[None],
         ],
     ):
@@ -108,7 +165,6 @@ class SlackAdapter:
         return api
 
     # ---------- 内部ユーティリティ ------------------------------------- #
-
     def _register_startup(self):
         @self.bolt.event("app_home_opened")
         async def _once_logger(**payload):
@@ -156,7 +212,14 @@ class SlackAdapter:
                 except ValueError as e:
                     await say(f"添付ファイルをスキップしました: {e}")
 
-            # -- ③ 後段コールバック -------------------------------------------
+            # -- ③ SlackRunContext を生成 -------------------------------------
+            run_ctx = SlackRunContext(
+                channel=event["channel"],
+                thread_ts=event.get("thread_ts") or event["event_ts"],
+                client=self.bolt.client,
+            )
+
+            # -- ④ 後段コールバック -------------------------------------------
             await self._handler(
                 event,
                 text,
@@ -164,11 +227,11 @@ class SlackAdapter:
                 file_urls,
                 say,
                 self.bolt,
-                self,  # type: ignore[arg-type]
+                self,       # adapter
+                run_ctx,    # ★ run context
             )
 
     # ---------- ダウンロード／保存 --------------------------------------- #
-
     async def _slack_get(self, url: str) -> bytes:
         headers = {"Authorization": f"Bearer {self.bot_token}"}
         async with aiohttp.ClientSession(headers=headers) as sess:
@@ -231,7 +294,6 @@ class SlackAdapter:
         return path.relative_to(self.upload_dir.parent)
 
     # ---------- プロンプト取得 --------------------------------------------- #
-
     async def fetch_channel_prompt(self, channel_id: str) -> Optional[str]:
         """チャンネルトピック／パーパスからプロンプト部分を抽出して返す。
 
@@ -240,7 +302,7 @@ class SlackAdapter:
         """
         empty = ""
 
-        client: AsyncWebClient = self.bolt.client
+        client: Any = self.bolt.client
         try:
             info = await client.conversations_info(channel=channel_id)
         except Exception as exc:
@@ -256,13 +318,16 @@ class SlackAdapter:
         if not target:
             return empty
 
-        m = re.search(rf"{re.escape(PROMPT_START)}\s*(.*?)\s*{re.escape(PROMPT_END)}", target, re.S)
+        m = re.search(
+            rf"{re.escape(PROMPT_START)}\s*(.*?)\s*{re.escape(PROMPT_END)}",
+            target,
+            re.S,
+        )
         if not m:
             return empty
         return m.group(1).strip()
 
     # -- 会話履歴 ------------------------------------------------------------ #
-
     async def build_thread_messages(
         self, event: dict, client: AsyncWebClient
     ) -> Tuple[List[dict], Optional[str]]:
@@ -341,6 +406,7 @@ class SlackAdapter:
 
         return history, last_response_id
 
+    # ---------- Slack ファイルダウンロード Tool --------------------------- #
     def get_download_file_tool(self) -> Callable:
         """
         Slack の添付ファイルパスを受け取り、ダウンロード → 保存 →

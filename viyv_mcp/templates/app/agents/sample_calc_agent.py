@@ -13,9 +13,9 @@ import os, json, logging, openai
 from agents import Runner, enable_verbose_stdout_logging
 
 # ---- ログ設定 --------------------------
-enable_verbose_stdout_logging()        # SDK の内部ログ
-openai.log = "debug"                   # HTTP リクエスト／レスポンス全文
-logging.basicConfig(level=logging.DEBUG)
+# enable_verbose_stdout_logging()        # SDK の内部ログ
+# openai.log = "debug"                   # HTTP リクエスト／レスポンス全文
+# logging.basicConfig(level=logging.DEBUG)
 
 
 @agent(

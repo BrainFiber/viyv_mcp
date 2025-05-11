@@ -1,9 +1,14 @@
-# app/agents/image_agent.py
+# File: app/agents/image_agent.py
 from typing import Annotated, Optional, Literal, List
 
 from pydantic import BaseModel, Field
+
 from viyv_mcp import agent
 from viyv_mcp.openai_bridge import build_function_tools
+
+# 追加インポート ──────────────────────────────────────────
+from agents import Agent as OAAgent, Runner, RunContextWrapper          # ←★
+from viyv_mcp.app.adapters.slack_adapter import SlackRunContext         # ←★
 
 
 @agent(
@@ -23,20 +28,23 @@ from viyv_mcp.openai_bridge import build_function_tools
 async def image_agent(
     operation: Annotated[
         str,
-        Field(title="実行する画像操作(generate_image or edit_image or variation_image)", description="生成・編集・バリエーションから選択"),
+        Field(
+            title="実行する画像操作(generate_image or edit_image or variation_image)",
+            description="生成・編集・バリエーションから選択",
+        ),
     ],
     prompt: Annotated[
-        str,
+        Optional[str],
         Field(
             title="プロンプト 生成・編集したい内容を自然言語で記述（必須: generate / edit）",
             description="生成・編集したい内容を自然言語で記述（必須: generate / edit）",
         ),
     ] = None,
-    image_url: Annotated[                                   # ★★★ param 名変更
+    image_url: Annotated[
         Optional[str],
         Field(
-            title="ベース画像 URL を設定する",                 # ★★★
-            description="編集・バリエーション元の画像（PNG/JPEG/WebP）を `/static/upload/...` などの URL で渡す",  # ★★★
+            title="ベース画像 URL を設定する",
+            description="編集・バリエーション元の画像（PNG/JPEG/WebP）を `/static/upload/...` などの URL で渡す",
         ),
     ] = None,
     mask_b64: Annotated[
@@ -83,20 +91,38 @@ async def image_agent(
             description="DALL·E 系のみ url 指定可。gpt-image-1 は常に b64_json。",
         ),
     ] = "b64_json",
+    # ここから追加 ───────────────────────────────────────────
+    wrapper: RunContextWrapper[SlackRunContext] = None
 ) -> str | List[str]:
+    """
+    Parameters
+    ----------
+    wrapper : RunContextWrapper[SlackRunContext] | None
+        Slack 側から渡されるランタイムコンテキスト。
+        進捗更新を行う場合は `wrapper.context.update_progress()` を利用。
+    """
 
+    # 0) 進捗開始メッセージ（任意）
+    if wrapper:
+        await wrapper.context.update_progress(":art: 画像処理を開始しました…")
+    else:
+        print("画像処理を開始しました。")
+        print("=== DEBUG: wrapper ===")
+        print(str(wrapper))
+
+        if wrapper:
+            print("=== DEBUG: wrapper.context ===")
+            print(str(wrapper.context))
+
+    # 1) 画像生成ツール群を取得
     oa_tools = build_function_tools()
 
-    try:
-        from agents import Agent as OAAgent, Runner
-    except ImportError:
-        return "Agents SDK がインストールされていません (`pip install openai-agents-python`)"
-    
+    # 2) 内部 OAAgent 定義
     class Response(BaseModel):
         text: str = Field(..., title="返信メッセージ本文")
         image_urls: Optional[List[str]] = Field(None, title="画像 URLs")
 
-    agent_ = OAAgent(
+    agent_ = OAAgent[SlackRunContext](
         name="ImageAssistant",
         instructions=(
             "あなたは画像生成・編集を行うアシスタントです。\n"
@@ -104,14 +130,14 @@ async def image_agent(
         ),
         model="o4-mini-2025-04-16",
         tools=oa_tools,
-        output_type=Response
+        output_type=Response,
     )
 
-    # ③ LLM へ渡すメッセージを整形
+    # 3) LLM に渡すメッセージを整形
     user_message = (
         f"Operation: {operation}\n"
         f"Prompt: {prompt}\n"
-        f"Image_url: {image_url if image_url else None}\n"       # ★★★
+        f"Image_url: {image_url if image_url else None}\n"
         f"Mask_b64: {mask_b64 if mask_b64 else None}\n"
         f"n: {n}\n"
         f"size: {size}\n"
@@ -121,7 +147,16 @@ async def image_agent(
     )
 
     try:
-        result = await Runner.run(agent_, user_message)
+        result = await Runner.run(
+            agent_,
+            input=user_message,
+            context=(wrapper.context if wrapper else None),  # ★ context を伝搬
+        )
+        # 4) 完了メッセージ更新（任意）
+        if wrapper:
+            await wrapper.context.update_progress(":white_check_mark: 画像処理が完了しました。")
         return result.final_output
     except Exception as exc:
+        if wrapper:
+            await wrapper.context.update_progress(f":x: 画像エージェントでエラーが発生: {exc}")
         return f"画像エージェント実行時にエラーが発生しました: {exc}"

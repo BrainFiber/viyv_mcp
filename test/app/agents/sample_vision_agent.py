@@ -18,8 +18,6 @@ except ImportError:                       # pragma: no cover
         "Agents SDK がインストールされていません (`pip install openai-agents-python`)"
     )
 
-enable_verbose_stdout_logging()           # SDK 内部ログを標準出力へ
-
 
 @agent(
     name="vision_agent",
