@@ -47,43 +47,6 @@ PROMPT_START = "###prompt_start###"
 PROMPT_END = "###prompt_end###"
 
 
-# ────────────────────────────────────────────────────────────────────────
-#  SlackRunContext  (Agent SDK の local context 用)
-# ────────────────────────────────────────────────────────────────────────
-@dataclass
-class SlackRunContext(RunContext):
-    channel: str
-    thread_ts: str
-    client: Any
-    progress_ts: Optional[str] = None  # chat.postMessage の ts を保持
-
-    async def post_start_message(self) -> None:
-        """スレッドに『処理を開始しました…』を投稿して ts を保持"""
-        resp = await self.client.chat_postMessage(
-            channel=self.channel,
-            thread_ts=self.thread_ts,
-            text=":hourglass_flowing_sand: 処理を開始しました…",
-        )
-        self.progress_ts = resp["ts"]
-
-    async def update_progress(self, text: str) -> None:
-        """chat.update で進捗メッセージを上書き"""
-        if not self.progress_ts:
-            await self.post_start_message()
-        await self.client.chat_update(
-            channel=self.channel,
-            ts=self.progress_ts,
-            text=text,
-        )
-
-    async def post_new_message(self, text: str) -> None:
-        """進捗とは別に新しいメッセージを投げたいときに使用"""
-        await self.client.chat_postMessage(
-            channel=self.channel,
-            thread_ts=self.thread_ts,
-            text=text,
-        )
-
 class SlackAdapter:
     """Slack エンドポイントを FastAPI サブアプリとして提供"""
 
@@ -95,36 +58,33 @@ class SlackAdapter:
         signing_secret: str,
         base_url: str = "http://localhost:8000",
         upload_dir: pathlib.Path = pathlib.Path("./static/upload"),
+        context_cls: type[RunContext],                 # ←★ 追加 … 必須
         allowed_mime: set[str] | None = {
-            "image/png",
-            "image/jpeg",
-            "image/gif",
-            "image/webp",
+            "image/png", "image/jpeg", "image/gif", "image/webp",
         },
         max_file_bytes: int = 10 * 1024 * 1024,
     ) -> None:
-        self.bot_token = bot_token
+        if context_cls is None:
+            raise ValueError("context_cls must be supplied")
+
+        self._context_cls   = context_cls              # ←★ 保存
+        self.bot_token      = bot_token
         self.signing_secret = signing_secret
-        self.base_url = base_url.rstrip("/")
-        self.upload_dir = upload_dir
-        self.allowed_mime = allowed_mime or set()
+        self.base_url       = base_url.rstrip("/")
+        self.upload_dir     = upload_dir
+        self.allowed_mime   = allowed_mime or set()
         self.max_file_bytes = max_file_bytes
 
         self.upload_dir.mkdir(parents=True, exist_ok=True)
 
         self.bolt = AsyncApp(token=bot_token, signing_secret=signing_secret)
-        #               ▼ image_urls と file_urls を分離
+
+        # ハンドラ型ヒントを RunContext に変更
         self._handler: (
             Callable[
                 [
-                    dict,             # event
-                    str,              # text
-                    List[str],        # image_urls
-                    List[str],        # file_urls
-                    Callable,         # say
-                    AsyncApp,         # bolt_app
-                    "SlackAdapter",   # adapter
-                    "SlackRunContext" # run_ctx
+                    dict, str, List[str], List[str],
+                    Callable, AsyncApp, "SlackAdapter", RunContext
                 ],
                 Awaitable[None],
             ]
@@ -222,7 +182,7 @@ class SlackAdapter:
                     await say(f"添付ファイルをスキップしました: {e}")
 
             # -- ③ SlackRunContext を生成 -------------------------------------
-            run_ctx = SlackRunContext(
+            run_ctx = self._context_cls(
                 channel=event["channel"],
                 thread_ts=event.get("thread_ts") or event["event_ts"],
                 client=self.bolt.client,

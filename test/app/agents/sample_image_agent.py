@@ -8,7 +8,6 @@ from viyv_mcp.openai_bridge import build_function_tools
 
 # 追加インポート ──────────────────────────────────────────
 from agents import Agent as OAAgent, Runner, RunContextWrapper          # ←★
-from viyv_mcp.app.adapters.slack_adapter import SlackRunContext
 from viyv_mcp.run_context import RunContext         # ←★
 
 

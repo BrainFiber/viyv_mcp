@@ -9,9 +9,10 @@
 * SlackAdapter が生成する **SlackRunContext** をそのまま利用
 """
 
+from dataclasses import dataclass
 import os
 import pathlib
-from typing import Annotated, List, Optional
+from typing import Annotated, Any, List, Optional
 from urllib.parse import unquote, urlparse
 
 import aiohttp
@@ -22,11 +23,11 @@ from agents import Agent as OAAgent, ItemHelpers, ModelSettings, Runner
 from openai.types.shared import Reasoning
 from viyv_mcp.app.adapters.slack_adapter import (
     SlackAdapter,
-    SlackRunContext,   # ← 追加 : adapter 側で定義された context を利用
 )
 from viyv_mcp.decorators import entry
 from viyv_mcp.openai_bridge import build_function_tools
 from app.utils.slack_utils import convert_markdown_to_slack
+from viyv_mcp.run_context import RunContext
 
 # ─── 環境変数 ──────────────────────────────────────────────────────────── #
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN", "")
@@ -35,6 +36,37 @@ BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", os.path.join(os.getcwd(), "static", "upload"))
 
 openai.log = "info"
+
+@dataclass
+class SlackRunContext(RunContext):
+    channel: str
+    thread_ts: str
+    client:   Any
+    progress_ts: Optional[str] = None
+
+    async def post_start_message(self) -> None:
+        res = await self.client.chat_postMessage(
+            channel=self.channel,
+            thread_ts=self.thread_ts,
+            text=":hourglass_flowing_sand: 処理を開始しました…",
+        )
+        self.progress_ts = res["ts"]
+
+    async def update_progress(self, text:str) -> None:
+        if not self.progress_ts:
+            await self.post_start_message()
+        await self.client.chat_update(
+            channel=self.channel,
+            ts=self.progress_ts,
+            text=text,
+        )
+
+    async def post_new_message(self, text:str) -> None:
+        await self.client.chat_postMessage(
+            channel=self.channel,
+            thread_ts=self.thread_ts,
+            text=text,
+        )
 
 # ─── エンドポイント定義 ───────────────────────────────────────────────── #
 @entry(
@@ -50,6 +82,7 @@ def slack_entry():
         signing_secret=SLACK_SIGNING_SECRET,
         base_url=BASE_URL,
         upload_dir=pathlib.Path(UPLOAD_DIR),
+        context_cls=SlackRunContext,
     )
 
     # ── メンション後段ロジック ───────────────────────────────────────── #
