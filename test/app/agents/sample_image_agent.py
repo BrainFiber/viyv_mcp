@@ -34,7 +34,7 @@ async def image_agent(
         ),
     ],
     prompt: Annotated[
-        Optional[str],
+        str,
         Field(
             title="プロンプト 生成・編集したい内容を自然言語で記述（必須: generate / edit）",
             description="生成・編集したい内容を自然言語で記述（必須: generate / edit）",

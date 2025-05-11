@@ -126,9 +126,10 @@ def register(mcp: FastMCP):
             Literal["auto", "low"], Field(default="auto")
         ] = "auto",
     ) -> List[str]:
-        await wrapper.context.update_progress(
-            "画像生成中です。しばらくお待ちください。"
-        )
+        if wrapper.context:
+            await wrapper.context.update_progress(
+                "画像生成中です。しばらくお待ちください。"
+            )
         resp = client.images.generate(
             model="gpt-image-1",
             prompt=prompt,
