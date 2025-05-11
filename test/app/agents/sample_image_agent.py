@@ -105,14 +105,6 @@ async def image_agent(
     # 0) 進捗開始メッセージ（任意）
     if wrapper:
         await wrapper.context.update_progress(":art: 画像処理を開始しました…")
-    else:
-        print("画像処理を開始しました。")
-        print("=== DEBUG: wrapper ===")
-        print(str(wrapper))
-
-        if wrapper:
-            print("=== DEBUG: wrapper.context ===")
-            print(str(wrapper.context))
 
     # 1) 画像生成ツール群を取得
     oa_tools = build_function_tools()

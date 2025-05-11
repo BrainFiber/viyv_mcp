@@ -1,5 +1,7 @@
+from agents import RunContextWrapper
 from viyv_mcp import agent
 from viyv_mcp.openai_bridge import build_function_tools
+from viyv_mcp.run_context import RunContext
 # import os, json, logging, openai
 
 # from agents import Runner, enable_verbose_stdout_logging
@@ -15,7 +17,10 @@ from viyv_mcp.openai_bridge import build_function_tools
     description="Notion ページを取得するツール",
     use_tools=["API-post-search","API-retrieve-a-page"],
 )
-async def notion_agent(query: str) -> str:
+async def notion_agent(query: str, wrapper: RunContextWrapper[RunContext] = None) -> str:
+
+    if wrapper:
+        await wrapper.context.update_progress("Notion ページを取得しています…")
 
     # --- ② OpenAI Agents SDK の Tool に変換 -------------------------------
     oa_tools = build_function_tools(use_tools=["API-post-search", "API-retrieve-a-page"])
