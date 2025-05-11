@@ -8,7 +8,8 @@ from viyv_mcp.openai_bridge import build_function_tools
 
 # 追加インポート ──────────────────────────────────────────
 from agents import Agent as OAAgent, Runner, RunContextWrapper          # ←★
-from viyv_mcp.app.adapters.slack_adapter import SlackRunContext         # ←★
+from viyv_mcp.app.adapters.slack_adapter import SlackRunContext
+from viyv_mcp.run_context import RunContext         # ←★
 
 
 @agent(
@@ -92,12 +93,12 @@ async def image_agent(
         ),
     ] = "b64_json",
     # ここから追加 ───────────────────────────────────────────
-    wrapper: RunContextWrapper[SlackRunContext] = None
+    wrapper: RunContextWrapper[RunContext] = None
 ) -> str | List[str]:
     """
     Parameters
     ----------
-    wrapper : RunContextWrapper[SlackRunContext] | None
+    wrapper : RunContextWrapper[RunContext] | None
         Slack 側から渡されるランタイムコンテキスト。
         進捗更新を行う場合は `wrapper.context.update_progress()` を利用。
     """
@@ -122,7 +123,7 @@ async def image_agent(
         text: str = Field(..., title="返信メッセージ本文")
         image_urls: Optional[List[str]] = Field(None, title="画像 URLs")
 
-    agent_ = OAAgent[SlackRunContext](
+    agent_ = OAAgent[RunContext](
         name="ImageAssistant",
         instructions=(
             "あなたは画像生成・編集を行うアシスタントです。\n"

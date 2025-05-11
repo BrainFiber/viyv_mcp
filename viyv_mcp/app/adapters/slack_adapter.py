@@ -39,6 +39,8 @@ from typing import Any
 from viyv_mcp.decorators import tool  # ★ 追加
 from agents import function_tool
 
+from viyv_mcp.run_context import RunContext
+
 logger = logging.getLogger(__name__)
 
 PROMPT_START = "###prompt_start###"
@@ -49,7 +51,7 @@ PROMPT_END = "###prompt_end###"
 #  SlackRunContext  (Agent SDK の local context 用)
 # ────────────────────────────────────────────────────────────────────────
 @dataclass
-class SlackRunContext:
+class SlackRunContext(RunContext):
     channel: str
     thread_ts: str
     client: Any
@@ -74,6 +76,13 @@ class SlackRunContext:
             text=text,
         )
 
+    async def post_new_message(self, text: str) -> None:
+        """進捗とは別に新しいメッセージを投げたいときに使用"""
+        await self.client.chat_postMessage(
+            channel=self.channel,
+            thread_ts=self.thread_ts,
+            text=text,
+        )
 
 class SlackAdapter:
     """Slack エンドポイントを FastAPI サブアプリとして提供"""
@@ -138,7 +147,7 @@ class SlackAdapter:
                 Callable,
                 AsyncApp,
                 "SlackAdapter",
-                SlackRunContext,
+                RunContext,
             ],
             Awaitable[None],
         ],

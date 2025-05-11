@@ -8,9 +8,11 @@ title / description / default 値を JSON-Schema に反映。
 
 from typing import Annotated, List
 
+from agents import RunContextWrapper
 from pydantic import Field
 from fastmcp import FastMCP   # 型ヒント用（任意）
 from viyv_mcp import tool
+from viyv_mcp.run_context import RunContext
 
 
 def register(mcp: FastMCP):  # auto_register_modules から呼ばれる
@@ -19,6 +21,7 @@ def register(mcp: FastMCP):  # auto_register_modules から呼ばれる
     # --------------------------------------------------------------------- #
     @tool(description="2つの数字を加算するツール", tags={"calc"})
     def add(
+        wrapper: RunContextWrapper[RunContext],
         a: Annotated[int, Field(title="被加数", description="1 つ目の整数")],
         b: Annotated[int, Field(title="加数",  description="2 つ目の整数")],
     ) -> int:
@@ -30,6 +33,7 @@ def register(mcp: FastMCP):  # auto_register_modules から呼ばれる
     # --------------------------------------------------------------------- #
     @tool(description="2つの数字を減算するツール", tags={"calc"})
     def subtract(
+        wrapper: RunContextWrapper[RunContext],
         minuend: Annotated[int, Field(title="被減数", description="引かれる数")],
         subtrahend: Annotated[int, Field(title="減数", description="引く数")],
     ) -> int:
@@ -41,6 +45,7 @@ def register(mcp: FastMCP):  # auto_register_modules から呼ばれる
     # --------------------------------------------------------------------- #
     @tool(description="乗算ツール（3 つ目の引数は省略可）", tags={"calc"})
     def multiply(
+        wrapper: RunContextWrapper[RunContext],
         x: Annotated[int, Field(title="被乗数1")],
         y: Annotated[int, Field(title="被乗数2")],
         z: Annotated[int, Field(title="被乗数3", description="省略可")] = 1,
@@ -53,6 +58,7 @@ def register(mcp: FastMCP):  # auto_register_modules から呼ばれる
     # --------------------------------------------------------------------- #
     @tool(description="数列の平均値を求めるツール", tags={"calcXX"})
     def average(
+        wrapper: RunContextWrapper[RunContext],
         numbers: Annotated[
             List[float],
             Field(

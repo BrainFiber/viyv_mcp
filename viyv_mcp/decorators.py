@@ -1,9 +1,10 @@
 # decorators.py
 # Decorators wrapping mcp decorators
-import asyncio
-import functools
-import inspect
-from typing import Any, Callable, Dict, Iterable, Optional, Union, Set
+import asyncio, functools, inspect
+from typing import (
+    Any, Callable, Dict, Iterable, Optional, Union, Set,
+    get_origin, get_args, Annotated            # ←★ add
+)
 
 from starlette.types import ASGIApp
 from fastmcp import FastMCP
@@ -14,6 +15,11 @@ from viyv_mcp.agent_runtime import (
     set_tools as _rt_set_tools,
     reset_tools as _rt_reset_tools,
 )
+
+try:                                         
+    from agents import RunContextWrapper
+except ImportError:
+    RunContextWrapper = None
 
 # --------------------------------------------------------------------------- #
 # 内部ユーティリティ                                                          #
@@ -93,7 +99,7 @@ async def _collect_tools_map(
 
         # 1. ローカル関数ツール
         if info and getattr(info, "fn", None):
-            local_fn = info.fn
+            local_fn = getattr(info.fn, "__original_tool_fn__", info.fn)
             sig = inspect.signature(local_fn)
 
             if inspect.iscoroutinefunction(local_fn):
@@ -170,19 +176,68 @@ def _wrap_callable_with_tools(
     mcp: FastMCP,
     **collect_kwargs,
 ) -> Callable[..., Any]:
+    """
+    tools_map を ContextVar に流し込み、wrapper (RunContextWrapper[...]) を
+    Agents SDK へ渡しつつ、FastMCP 側の JSON-Schema 生成エラーを回避するラッパ。
+    """
+
+    # ---------- RunContextWrapper 判定 ----------------------------------
+    def _is_wrapper(param: inspect.Parameter) -> bool:
+        if RunContextWrapper is None:
+            return False
+        ann = param.annotation
+        if ann is inspect._empty:
+            return False
+
+        if get_origin(ann) is Annotated:            # Annotated[RCW[…], …] を剥がす
+            ann = get_args(ann)[0]
+
+        if ann is RunContextWrapper or get_origin(ann) is RunContextWrapper:
+            return True
+        if get_origin(ann) is Union:
+            return any(
+                a is RunContextWrapper or get_origin(a) is RunContextWrapper
+                for a in get_args(ann)
+            )
+        return False
+
+    # ---------- ラッパ本体 ----------------------------------------------
     async def _impl(*args, **kwargs):
         tools_map = await _collect_tools_map(mcp, **collect_kwargs)
         token = _rt_set_tools(tools_map)
         try:
             if "tools" in inspect.signature(fn).parameters:
                 kwargs["tools"] = tools_map
-            return await fn(*args, **kwargs) if inspect.iscoroutinefunction(fn) else fn(
-                *args, **kwargs
+            return (
+                await fn(*args, **kwargs)
+                if inspect.iscoroutinefunction(fn)
+                else fn(*args, **kwargs)
             )
         finally:
             _rt_reset_tools(token)
 
     functools.update_wrapper(_impl, fn)
+
+    # ---------- シグネチャ再構築 ----------------------------------------
+    orig_sig = inspect.signature(fn)
+
+    # 1) wrapper パラメータを作成
+    wrapper_ann = RunContextWrapper if RunContextWrapper else Any
+    wrapper_param = inspect.Parameter(
+        name="wrapper",
+        kind=inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        annotation=wrapper_ann,
+        default=inspect._empty,                     # 必須扱い
+    )
+
+    # 2) 元関数のパラメータ（wrapper は除外）
+    other_params = [
+        p for p in orig_sig.parameters.values() if not _is_wrapper(p)
+    ]
+
+    # 3) 新しいシグネチャ  (wrapper を先頭に)
+    _impl.__signature__ = inspect.Signature([wrapper_param] + other_params)  # type: ignore[attr-defined]
+
     return _impl
 
 
@@ -215,9 +270,38 @@ def tool(
     description: str | None = None,
     tags: set[str] | None = None,
 ):
-    def decorator(fn: Callable):
-        _get_mcp_from_stack().tool(name=name, description=description, tags=tags)(fn)
-        return fn
+    """
+    * wrapper (RunContextWrapper) を **Agents 実行時** だけ受け取りたい。
+    * FastMCP に登録するときは JSON-Schema 生成を壊さないよう
+      wrapper をシグネチャから外したダミーを登録する。
+    """
+
+    def decorator(fn: Callable[..., Any]):
+        mcp = _get_mcp_from_stack()
+        tool_name = name or fn.__name__
+        tool_desc = description or (fn.__doc__ or f"Viyv tool '{tool_name}'")
+
+        # 1) Agents 実行用：wrapper を先頭に差し込む
+        impl = _wrap_callable_with_tools(fn, mcp)   # ← wrapper 必須で返る
+
+        # 2) FastMCP / JSON-Schema 用：wrapper を除いたダミー関数
+        async def _schema_stub(*args, **kwargs):
+            # → そのまま本体を呼び出すだけ
+            return await impl(*args, **kwargs) if inspect.iscoroutinefunction(impl) else impl(*args, **kwargs)
+
+        #   シグネチャから wrapper を削除
+        params_no_wrapper = [
+            p for p in inspect.signature(impl).parameters.values()
+            if p.name != "wrapper"
+        ]
+        _schema_stub.__signature__ = inspect.Signature(params_no_wrapper)  # type: ignore[attr-defined]
+        _schema_stub.__doc__ = tool_desc
+        #   Agents から参照できるよう実体を保持
+        _schema_stub.__original_tool_fn__ = impl       # ← ここがポイント
+
+        # 3) FastMCP に登録（JSON-Schema 生成は stub を見る）
+        mcp.tool(name=tool_name, description=tool_desc, tags=tags)(_schema_stub)
+        return fn  # 元の関数をそのまま返す
 
     return decorator
 

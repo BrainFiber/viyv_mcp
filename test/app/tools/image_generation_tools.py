@@ -15,11 +15,14 @@ import uuid
 import imghdr
 from typing import Annotated, List, Literal, Optional, Sequence, Union
 
+from agents import RunContextWrapper
 import aiohttp                          # ★★★ 追加
 import openai
 from pydantic import Field
 from viyv_mcp import tool
-from fastmcp import FastMCP  # 型ヒント用 (任意)
+from fastmcp import FastMCP
+
+from viyv_mcp.run_context import RunContext  # 型ヒント用 (任意)
 
 # ────────────────────────────── 環境設定 ────────────────────────────── #
 
@@ -104,6 +107,7 @@ def register(mcp: FastMCP):
         tags={"image", "generation"},
     )
     async def generate_image(
+        wrapper: RunContextWrapper[RunContext],
         prompt: Annotated[str, Field(title="生成プロンプト", description="画像の内容を詳しく説明")],
         size: Annotated[
             Literal["1024x1024", "1536x1024", "1024x1536", "auto"], Field(default="1024x1024")
@@ -122,6 +126,9 @@ def register(mcp: FastMCP):
             Literal["auto", "low"], Field(default="auto")
         ] = "auto",
     ) -> List[str]:
+        wrapper.context.update_progress(
+            "画像生成中です。しばらくお待ちください。"
+        )
         resp = client.images.generate(
             model="gpt-image-1",
             prompt=prompt,
@@ -145,6 +152,7 @@ def register(mcp: FastMCP):
         tags={"image", "edit"},
     )
     async def edit_image(
+        wrapper: RunContextWrapper[RunContext],
         prompt: Annotated[str, Field(title="編集プロンプト", description="編集後の画像内容")],
         image_b64: Annotated[  # 名称は維持。URL または base64 のどちらでも受け付ける   ★★★
             List[str],
@@ -209,6 +217,7 @@ def register(mcp: FastMCP):
         tags={"image", "variation"},
     )
     async def variation_image(
+        wrapper: RunContextWrapper[RunContext],
         image_b64: Annotated[str, Field(title="元画像(base64)")],
         n: Annotated[int, Field(ge=1, le=4)] = 1,
         size: Annotated[
