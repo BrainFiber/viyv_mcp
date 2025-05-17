@@ -2,8 +2,15 @@ README.md
 
 # viyv_mcp
 
-**viyv_mcp** is a simple Python wrapper library for FastMCP and Starlette.  
+**viyv_mcp** is a simple Python wrapper library for FastMCP and Starlette.
 It enables you to quickly create a fully‐configured MCP server project with sample tools, resources, prompts, and external configuration support.
+
+## Why viyv_mcp?
+
+- Launch a complete MCP server in minutes with a single command.
+- Built-in adapters for Slack and OpenAI Agents reduce boilerplate when integrating external services.
+- Dynamic tool injection keeps agents up to date with the latest tools on every request.
+- Simple decorators for tools, prompts, resources, and agents let you focus on logic rather than wiring.
 
 ## Features
 
@@ -11,19 +18,26 @@ It enables you to quickly create a fully‐configured MCP server project with sa
   Use the provided CLI command `create-viyv-mcp new <project_name>` to generate a new project template with a complete directory structure and sample files.
 - **Integrated MCP Server:**  
   Automatically sets up FastMCP with Starlette and provides an SSE-based API.
-- **Decorator APIs:**  
+- **Decorator APIs:**
   Simplify registration of tools, resources, prompts, and agents with built-in decorators (`@tool`, `@resource`, `@prompt`, and `@agent`).
-- **External MCP Bridge Support:**  
+- **External MCP Bridge Support:**
   Automatically launches and registers external MCP servers based on JSON config files in `app/mcp_server_configs`.
-- **Health Check Endpoint:**  
+- **Health Check Endpoint:**
   Provides a `/health` endpoint to verify server status (returns `{"status":"ok"}`).
-- **Template Inclusion:**  
+- **Slack Integration:**
+  Includes a `SlackAdapter` for easily connecting a Slack workspace and handling attachments or mention events.
+- **OpenAI Agents Bridge:**
+  Convert FastMCP tools into OpenAI Agents SDK `FunctionTool` objects via `build_function_tools` for advanced agent workflows.
+- **Dynamic Tool Injection & Entry Decorator:**
+  Register additional FastAPI sub-apps with `@entry` and receive up-to-date tools on every request.
+- **Template Inclusion:**
   The generated project templates include:
   - **Configuration Files:** (e.g. `app/config.py`)
   - **Prompts:** (e.g. `app/prompts/sample_prompt.py`)
   - **Resources:** (e.g. `app/resources/sample_echo_resource.py`)
   - **Tools:** (e.g. `app/tools/sample_math_tools.py`)
   - **MCP Server Configs:** (e.g. `app/mcp_server_configs/sample_slack.json`)
+  - **Entries:** sample endpoints for webhook, Slack, and health check
   - **Dockerfile**, **pyproject.toml**, and **main.py** for the generated project.
 
 ## Installation
@@ -115,6 +129,28 @@ viyv_mcp/
 pyproject.toml
 README.md
 ```
+
+### Integrating with Slack and OpenAI Agents
+
+The template project includes sample entries and agent definitions that show how to:
+
+- Mount a Slack endpoint using `SlackAdapter` for handling Slack events.
+- Define async functions with `@agent` and call them via HTTP or from other tools.
+- Convert registered FastMCP tools into OpenAI Agents SDK functions with `build_function_tools`.
+
+For example:
+
+```python
+from viyv_mcp import agent
+from viyv_mcp.openai_bridge import build_function_tools
+
+@agent(name="slack_agent", use_tags=["slack"])
+async def slack_agent(action_japanese: str, instruction: str) -> str:
+    oa_tools = build_function_tools(use_tags=["slack"])
+    # ... implement agent logic here ...
+```
+
+Samples under `app/agents` and `app/entries` serve as a starting point for your own integrations.
 
 ## Contributing
 
