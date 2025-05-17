@@ -51,7 +51,7 @@ def register(mcp: FastMCP):  # auto_register_modules から呼ばれる
     # --------------------------------------------------------------------- #
     # 4) average（配列入力と浮動小数出力）
     # --------------------------------------------------------------------- #
-    @tool(description="数列の平均値を求めるツール", tags={"calcXX"})
+    @tool(description="数列の平均値を求めるツール", tags={"calc"})
     def average(
         numbers: Annotated[
             List[float],
