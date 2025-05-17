@@ -1,11 +1,16 @@
+# Byte-compiled / optimized files
 *.pyc
-__pycache__
-viyv_mcp.egg-info/PKG-INFO
-viyv_mcp.egg-info/SOURCES.txt
-viyv_mcp.egg-info/dependency_links.txt
-viyv_mcp.egg-info/entry_points.txt
-viyv_mcp.egg-info/requires.txt
-viyv_mcp.egg-info/top_level.txt
+__pycache__/
+
+# Distribution / packaging
+.DS_Store
+dist/
 viyv_mcp.egg-info/
-viyv_mcp/__pycache__/core.cpython-312.pyc
+viyv_mcp/__pycache__/
+
+# Dependency lock files
+uv.lock
+test/uv.lock
+
+# Local test outputs
 test/static
