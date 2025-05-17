@@ -1,9 +1,17 @@
-README.md
-
 # viyv_mcp
 
-**viyv_mcp** is a simple Python wrapper library for FastMCP and Starlette.
-It enables you to quickly create a fully‐configured MCP server project with sample tools, resources, prompts, and external configuration support.
+**viyv_mcp** is a lightweight Python wrapper around FastMCP and Starlette.
+It lets you spin up a fully configured MCP server project with sample tools, resources, prompts and bridge configuration in just a few commands.
+
+## Overview
+
+The library provides:
+
+- a CLI to generate a ready‐to‐run project template;
+- decorator based APIs to register tools, resources, prompts and agents; and
+- optional adapters for external services such as Slack or OpenAI Agents.
+
+With these pieces you can create custom MCP servers, add your own business logic and expose the tools to any MCP compatible client.
 
 ## Why viyv_mcp?
 
@@ -52,7 +60,7 @@ pip install viyv_mcp
 
 This installs the package as well as provides the CLI command `create-viyv-mcp`.
 
-## Usage
+## Quick Start
 
 ### Creating a New Project Template
 
@@ -130,6 +138,28 @@ pyproject.toml
 README.md
 ```
 
+### Writing Custom Modules
+
+Register your own tools, resources and prompts using the provided decorators:
+
+```python
+from fastmcp import FastMCP
+from viyv_mcp import tool, resource, prompt
+
+def register(mcp: FastMCP):
+    @tool(description="Add two numbers")
+    def add(a: int, b: int) -> int:
+        return a + b
+
+    @resource("echo://{message}")
+    def echo_resource(message: str) -> str:
+        return f"Echo: {message}"
+
+    @prompt()
+    def sample_prompt(query: str) -> str:
+        return f"Your query is: {query}"
+```
+
 ### Integrating with Slack and OpenAI Agents
 
 The template project includes sample entries and agent definitions that show how to:
@@ -151,6 +181,24 @@ async def slack_agent(action_japanese: str, instruction: str) -> str:
 ```
 
 Samples under `app/agents` and `app/entries` serve as a starting point for your own integrations.
+
+### Slack Adapter Example
+
+Mount a Slack endpoint using the bundled adapter:
+
+```python
+from fastapi import FastAPI
+from viyv_mcp.app.adapters.slack_adapter import SlackAdapter
+from viyv_mcp.run_context import RunContext
+
+app = FastAPI()
+adapter = SlackAdapter(
+    bot_token="xoxb-***",
+    signing_secret="your-signing-secret",
+    context_cls=RunContext,
+)
+app.mount("/slack", adapter.as_fastapi_app())
+```
 
 ## Contributing
 
