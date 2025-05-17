@@ -1,2 +1,0 @@
-[console_scripts]
-create-viyv-mcp = viyv_mcp.cli:main
