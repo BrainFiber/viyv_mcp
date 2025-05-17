@@ -48,7 +48,7 @@ class ViyvMCP:
     def _create_asgi_app(self):
         # --- MCP サブアプリ（Streamable HTTP） --------------------------- #
         self._mcp = self._create_mcp_server()
-        # `/mcp` がデフォルト。ルート直下にしたい場合は path="/" とする
+        # `/` がデフォルト。`/mcp` にマウントしたい場合は path="/mcp" とする
         mcp_app = self._mcp.http_app(path="/")          # Streamable HTTP
 
         # --- 静的ファイル ------------------------------------------------- #

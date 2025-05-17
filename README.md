@@ -108,7 +108,7 @@ my_mcp_project/
    uv run python main.py
    ```
 
-The server will start on `0.0.0.0:8000` by default. It exposes an SSE-based API at `/` and `/messages`, provides a health-check endpoint at `/health` (returns `{"status":"ok"}`), automatically registers local modules (tools, resources, prompts), and bridges external MCP servers defined in `app/mcp_server_configs`.
+The server will start on `0.0.0.0:8000` by default. It exposes an SSE-based API at `/mcp` and `/mcp/messages`, provides a health-check endpoint at `/health` (returns `{"status":"ok"}`), automatically registers local modules (tools, resources, prompts), and bridges external MCP servers defined in `app/mcp_server_configs`.
 
 ### Package Structure
 

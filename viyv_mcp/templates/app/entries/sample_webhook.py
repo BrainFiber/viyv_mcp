@@ -37,7 +37,7 @@ def webhook_app() -> FastAPI:
     return app
 
 @entry("/webhook/slack", use_tags=["slack"])
-def webhook_app() -> FastAPI:
+def webhook_slack_app() -> FastAPI:
     app = FastAPI()
     @app.get("/", include_in_schema=False)
     async def ping():
