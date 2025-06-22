@@ -58,13 +58,14 @@ async def init_bridges(
         args         = cfg.get("args", [])
         cfg_tags: Set[str] = set(cfg.get("tags", []))            # ★ 追加: config 由来タグ
         json_env     = cfg.get("env", {})
+        cwd          = cfg.get("cwd", None)                      # ★ 追加: 作業ディレクトリ
 
         # 環境変数マージ（OS が優先）
         env_merged = {k: os.environ.get(k, v) for k, v in json_env.items()}
 
         logger.info(f"=== Starting external MCP server '{name}' ===")
 
-        server_params = StdioServerParameters(command=cmd, args=args, env=env_merged or None)
+        server_params = StdioServerParameters(command=cmd, args=args, env=env_merged or None, cwd=cwd)
 
         # --- プロセス / セッション確立 ------------------------------------------------
         stdio_ctx = stdio_client(server_params)
