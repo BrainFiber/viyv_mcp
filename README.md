@@ -1,216 +1,273 @@
 # viyv_mcp
 
-**viyv_mcp** is a lightweight Python wrapper around FastMCP and Starlette.
-It lets you spin up a fully configured MCP server project with sample tools, resources, prompts and bridge configuration in just a few commands.
+**viyv_mcp** is a lightweight Python wrapper around [FastMCP](https://github.com/jlowin/fastmcp) and [Starlette](https://www.starlette.io/) that simplifies creating MCP (Model Context Protocol) servers with minimal boilerplate.
+
+[![PyPI version](https://badge.fury.io/py/viyv_mcp.svg)](https://badge.fury.io/py/viyv_mcp)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+## 🚀 Quick Start
+
+```bash
+# Install the package
+pip install viyv_mcp
+
+# Create a new MCP server project
+create-viyv-mcp new my_mcp_server
+
+# Navigate to the project and install dependencies
+cd my_mcp_server
+uv sync
+
+# Run the server
+uv run python main.py
+```
+
+Your MCP server is now running at `http://localhost:8000` 🎉
 
 ## Overview
 
-The library provides:
+viyv_mcp provides:
 
-- a CLI to generate a ready‐to‐run project template;
-- decorator based APIs to register tools, resources, prompts and agents; and
-- optional adapters for external services such as Slack or OpenAI Agents.
+- **CLI Tool**: Generate production-ready MCP server projects instantly
+- **Decorator APIs**: Register tools, resources, prompts, and agents with simple decorators
+- **Auto-registration**: Automatically discover and register modules in your project
+- **External MCP Bridge**: Connect and manage external MCP servers seamlessly
+- **Built-in Adapters**: Ready-to-use integrations for Slack and OpenAI Agents
+- **Hot Reloading**: Dynamic tool injection keeps your agents up-to-date
 
-With these pieces you can create custom MCP servers, add your own business logic and expose the tools to any MCP compatible client.
+## ✨ Key Features
 
-## Why viyv_mcp?
+### 🛠️ Simple Tool Creation
+```python
+from viyv_mcp import tool
 
-- Launch a complete MCP server in minutes with a single command.
-- Built-in adapters for Slack and OpenAI Agents reduce boilerplate when integrating external services.
-- Dynamic tool injection keeps agents up to date with the latest tools on every request.
-- Simple decorators for tools, prompts, resources, and agents let you focus on logic rather than wiring.
+@tool(description="Add two numbers")
+def add(a: int, b: int) -> int:
+    return a + b
+```
 
-## Features
+### 🤖 Agent Support
+```python
+from viyv_mcp import agent
 
-- **Quick Project Creation:**  
-  Use the provided CLI command `create-viyv-mcp new <project_name>` to generate a new project template with a complete directory structure and sample files.
-- **Integrated MCP Server:**  
-  Automatically sets up FastMCP with Starlette and provides an SSE-based API.
-- **Decorator APIs:**
-  Simplify registration of tools, resources, prompts, and agents with built-in decorators (`@tool`, `@resource`, `@prompt`, and `@agent`).
-- **External MCP Bridge Support:**
-  Automatically launches and registers external MCP servers based on JSON config files in `app/mcp_server_configs`.
-- **Health Check Endpoint:**
-  Provides a `/health` endpoint to verify server status (returns `{"status":"ok"}`).
-- **Slack Integration:**
-  Includes a `SlackAdapter` for easily connecting a Slack workspace and handling attachments or mention events.
-- **OpenAI Agents Bridge:**
-  Convert FastMCP tools into OpenAI Agents SDK `FunctionTool` objects via `build_function_tools` for advanced agent workflows.
-- **Dynamic Tool Injection & Entry Decorator:**
-  Register additional FastAPI sub-apps with `@entry` and receive up-to-date tools on every request.
-- **Template Inclusion:**
-  The generated project templates include:
-  - **Configuration Files:** (e.g. `app/config.py`)
-  - **Prompts:** (e.g. `app/prompts/sample_prompt.py`)
-  - **Resources:** (e.g. `app/resources/sample_echo_resource.py`)
-  - **Tools:** (e.g. `app/tools/sample_math_tools.py`)
-  - **MCP Server Configs:** (e.g. `app/mcp_server_configs/sample_slack.json`)
-  - **Entries:** sample endpoints for webhook, Slack, and health check
-  - **Dockerfile**, **pyproject.toml**, and **main.py** for the generated project.
+@agent(name="calculator", use_tools=["add", "subtract"])
+async def calculator_agent(query: str) -> str:
+    # Your agent logic here
+    pass
+```
 
-## Installation
+### 🌉 External MCP Server Bridge
+```json
+// app/mcp_server_configs/playwright.json
+{
+  "name": "playwright",
+  "command": "npx",
+  "args": ["@playwright/mcp@latest"]
+}
+```
 
-### From PyPI
+### 🔗 Multiple Integration Options
+- **Slack**: Built-in adapter for Slack bots and event handling
+- **OpenAI Agents**: Bridge MCP tools to OpenAI function calling
+- **Custom Endpoints**: Mount additional FastAPI apps with `@entry`
 
-Install **viyv_mcp** via pip:
+## 📦 Installation
 
 ```bash
 pip install viyv_mcp
 ```
 
-This installs the package as well as provides the CLI command `create-viyv-mcp`.
+## 📁 Project Structure
 
-## Quick Start
-
-### Creating a New Project Template
-
-After installing the package, run:
-
-```bash
-create-viyv-mcp new my_mcp_project
-```
-
-This command creates a new directory called `my_mcp_project` with the following structure:
+When you create a new project with `create-viyv-mcp new my_project`, you get:
 
 ```
-my_mcp_project/
-├── Dockerfile
-├── pyproject.toml
-├── main.py
+my_project/
+├── main.py                # Server entry point
+├── pyproject.toml         # Project dependencies (managed by uv)
+├── Dockerfile             # Container deployment ready
 └── app/
-    ├── config.py
-    ├── mcp_server_configs/
-    │   └── sample_slack.json
-    ├── prompts/
-    │   └── sample_prompt.py
-    ├── resources/
-    │   └── sample_echo_resource.py
-    └── tools/
-        └── sample_math_tools.py
+    ├── config.py          # Environment configuration
+    ├── tools/             # Your MCP tools (@tool decorator)
+    ├── resources/         # MCP resources (@resource decorator)
+    ├── prompts/           # MCP prompts (@prompt decorator)
+    ├── agents/            # AI agents (@agent decorator)
+    ├── entries/           # Custom HTTP endpoints (@entry decorator)
+    └── mcp_server_configs/ # External MCP server configurations
 ```
 
-### Running the MCP Server
-1. Change into your new project directory:
+## 💻 Usage Examples
 
-   ```bash
-   cd my_mcp_project
-   ```
+### Creating Custom Tools
 
-2. Use `uv` to resolve dependencies (this uses the `pyproject.toml` for dependency management):
-
-   ```bash
-   uv sync
-   ```
-
-3. Start the server with:
-
-   ```bash
-   uv run python main.py
-   ```
-
-The server will start on `0.0.0.0:8000` by default. It exposes an SSE-based API at `/` and `/messages`, provides a health-check endpoint at `/health` (returns `{"status":"ok"}`), automatically registers local modules (tools, resources, prompts), and bridges external MCP servers defined in `app/mcp_server_configs`.
-
-### Package Structure
-
-```text
-viyv_mcp/
-├── __init__.py           # Exports version, ViyvMCP, and decorators
-├── core.py               # FastMCP integration and ASGI app setup
-├── cli.py                # CLI command (create-viyv-mcp)
-├── decorators.py         # Decorators for tool, resource, prompt, and agent registration
-├── app/
-│   ├── config.py         # Configuration (HOST, PORT, BRIDGE_CONFIG_DIR)
-│   ├── lifespan.py       # Lifecycle context manager
-│   ├── registry.py       # Module auto-registration logic
-│   └── bridge_manager.py # External bridge management (init and close)
-└── templates/
-    ├── Dockerfile
-    ├── pyproject.toml
-    ├── main.py
-    └── app/              # Sample project scaffold
-        ├── config.py
-        ├── mcp_server_configs/sample_slack.json
-        ├── prompts/sample_prompt.py
-        ├── resources/sample_echo_resource.py
-        └── tools/sample_math_tools.py
-
-pyproject.toml
-README.md
-```
-
-### Writing Custom Modules
-
-Register your own tools, resources and prompts using the provided decorators:
+Create a file `app/tools/my_tools.py`:
 
 ```python
-from fastmcp import FastMCP
-from viyv_mcp import tool, resource, prompt
+from viyv_mcp import tool
+from typing import Annotated
+from pydantic import Field
 
-def register(mcp: FastMCP):
-    @tool(description="Add two numbers")
-    def add(a: int, b: int) -> int:
-        return a + b
-
-    @resource("echo://{message}")
-    def echo_resource(message: str) -> str:
-        return f"Echo: {message}"
-
-    @prompt()
-    def sample_prompt(query: str) -> str:
-        return f"Your query is: {query}"
+def register(mcp):
+    @tool(description="Calculate the area of a rectangle")
+    def calculate_area(
+        width: Annotated[float, Field(description="Width of the rectangle")],
+        height: Annotated[float, Field(description="Height of the rectangle")]
+    ) -> float:
+        """Returns the area of a rectangle"""
+        return width * height
 ```
 
-### Integrating with Slack and OpenAI Agents
+### Creating Resources
 
-The template project includes sample entries and agent definitions that show how to:
+Create a file `app/resources/my_resources.py`:
 
-- Mount a Slack endpoint using `SlackAdapter` for handling Slack events.
-- Define async functions with `@agent` and call them via HTTP or from other tools.
-- Convert registered FastMCP tools into OpenAI Agents SDK functions with `build_function_tools`.
+```python
+from viyv_mcp import resource
 
-For example:
+def register(mcp):
+    @resource("config://{key}")
+    def get_config(key: str) -> str:
+        """Retrieve configuration values"""
+        configs = {
+            "api_version": "1.0",
+            "max_retries": "3"
+        }
+        return configs.get(key, "Not found")
+```
+
+### Creating an Agent
+
+Create a file `app/agents/my_agent.py`:
 
 ```python
 from viyv_mcp import agent
 from viyv_mcp.openai_bridge import build_function_tools
 
-@agent(name="slack_agent", use_tags=["slack"])
-async def slack_agent(action_japanese: str, instruction: str) -> str:
-    oa_tools = build_function_tools(use_tags=["slack"])
-    # ... implement agent logic here ...
+@agent(name="math_agent", use_tools=["calculate_area", "add"])
+async def math_agent(task: str) -> str:
+    """An agent that can perform mathematical calculations"""
+    # Get available tools
+    tools = build_function_tools(use_tools=["calculate_area", "add"])
+    
+    # Your agent logic here
+    return f"Completed task: {task}"
 ```
 
-Samples under `app/agents` and `app/entries` serve as a starting point for your own integrations.
+### Bridging External MCP Servers
 
-### Slack Adapter Example
+Add a JSON config file in `app/mcp_server_configs/`:
 
-Mount a Slack endpoint using the bundled adapter:
+```json
+{
+  "name": "filesystem",
+  "command": "npx",
+  "args": ["@modelcontextprotocol/server-filesystem", "/path/to/workspace"],
+  "env": {}
+}
+```
+
+The external server's tools will be automatically available in your MCP server!
+
+### Slack Integration
+
+Create a file `app/entries/slack_entry.py`:
 
 ```python
-from fastapi import FastAPI
+from viyv_mcp import entry
 from viyv_mcp.app.adapters.slack_adapter import SlackAdapter
 from viyv_mcp.run_context import RunContext
 
-app = FastAPI()
-adapter = SlackAdapter(
-    bot_token="xoxb-***",
-    signing_secret="your-signing-secret",
-    context_cls=RunContext,
-)
-app.mount("/slack", adapter.as_fastapi_app())
+@entry("/slack")
+def create_slack_app():
+    adapter = SlackAdapter(
+        bot_token="xoxb-your-bot-token",
+        signing_secret="your-signing-secret",
+        context_cls=RunContext,
+    )
+    return adapter.as_fastapi_app()
 ```
 
-## Contributing
+### Custom API Endpoints
 
-Contributions are welcome! If you find a bug or have a feature request, please open an issue or create a pull request on GitHub.
+Create a file `app/entries/api.py`:
 
-## License
+```python
+from viyv_mcp import entry
+from fastapi import FastAPI
 
-This project is licensed under the MIT License. See the LICENSE file for details.
+@entry("/api/v1")
+def create_api():
+    app = FastAPI()
+    
+    @app.get("/status")
+    def get_status():
+        return {"status": "operational", "version": "1.0"}
+    
+    return app
+```
 
-## Contact
+## 🔧 Configuration
 
-For any inquiries, please contact:
-- hiroki takezawa  
-  Email: hiroki.takezawa@brainfiber.net
-- GitHub: BrainFiber/viyv_mcp
+Environment variables you can set:
+
+- `HOST`: Server host (default: `127.0.0.1`)
+- `PORT`: Server port (default: `8000`)
+- `BRIDGE_CONFIG_DIR`: Directory for external MCP configs (default: `app/mcp_server_configs`)
+- `STATIC_DIR`: Static files directory (default: `static/images`)
+
+## 🏗️ Advanced Features
+
+### Auto-registration
+All modules in `app/tools/`, `app/resources/`, `app/prompts/`, and `app/agents/` are automatically registered if they have a `register(mcp)` function.
+
+### Dynamic Tool Injection
+Tools are dynamically injected into agents on each request, ensuring they always have access to the latest available tools.
+
+### Session Context
+Tools can access session context (e.g., Slack events) through the `RunContextWrapper` parameter.
+
+## 📚 Examples
+
+Check out the `example/` directory for complete working examples:
+
+- **claude_code_mcp**: MCP server that exposes Claude Code CLI functionality
+- **test**: Comprehensive example with Slack integration and various agents
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
+
+### Development Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/BrainFiber/viyv_mcp
+cd viyv_mcp
+
+# Install in development mode
+pip install -e .
+
+# Run tests
+pytest
+```
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 👥 Authors
+
+- **Hiroki Takezawa** - [BrainFiber](https://github.com/BrainFiber)
+
+## 🙏 Acknowledgments
+
+- Built on top of [FastMCP](https://github.com/jlowin/fastmcp) by jlowin
+- Uses [Starlette](https://www.starlette.io/) for ASGI framework
+- Inspired by the [Model Context Protocol](https://modelcontextprotocol.io/) specification
+
+## 📮 Support
+
+- 📧 Email: hiroki.takezawa@brainfiber.net
+- 🐛 Issues: [GitHub Issues](https://github.com/BrainFiber/viyv_mcp/issues)
+- 💬 Discussions: [GitHub Discussions](https://github.com/BrainFiber/viyv_mcp/discussions)
