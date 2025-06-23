@@ -1,7 +1,4 @@
 import uvicorn
-from dotenv import load_dotenv
-
-load_dotenv()
 
 try:
     from viyv_mcp import ViyvMCP

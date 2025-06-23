@@ -5,4 +5,4 @@ __version__ = "0.1.2"
 
 # ここで core.py のクラスを読み込み
 from .core import ViyvMCP
-from .decorators import tool, resource, prompt, agent
+from .decorators import tool, resource, prompt, agent, entry

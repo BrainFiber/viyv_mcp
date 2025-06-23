@@ -22,12 +22,20 @@ python -m build
 # Install locally for development
 pip install -e .
 
+# When testing in example projects, install viyv_mcp in editable mode
+cd example/test  # or any example project
+uv pip install -e ../../  # Install viyv_mcp from parent directory
+
 # Create a new project from template
 create-viyv-mcp new <project_name>
 
 # Publishing to PyPI
+pip install build twine  # Install build tools if needed
 rm -rf dist/ build/ *.egg-info
 python -m build
+# Optional: Test upload to TestPyPI first
+twine upload --repository testpypi dist/*
+# Production upload
 twine upload dist/*
 ```
 
@@ -75,6 +83,8 @@ uv run python main.py
 5. **ASGI Architecture**: Built on Starlette with FastMCP mounted at `/mcp` by default, supporting SSE-based communication.
 
 6. **RunContextWrapper Pattern**: Tools receive a `RunContextWrapper[RunContext]` parameter that provides access to context like Slack events and user information.
+
+7. **Signature Manipulation**: The decorator system manipulates function signatures to support `RunContextWrapper` for agent execution while maintaining clean JSON Schema generation for FastMCP.
 
 ### Code Examples
 
@@ -170,3 +180,54 @@ Core dependencies include:
 - The package is distributed on PyPI as `viyv_mcp` (current version: 0.1.3)
 - Generated projects use `uv` for dependency management via `pyproject.toml`
 - Tools using RunContextWrapper can access Slack events and user context when available
+- The test/ directory contains working examples rather than unit tests - use these as reference implementations
+- External MCP servers are managed as child processes with stdio-based communication
+
+## File Placement Guidelines
+
+When creating scripts or files during development with Claude Code:
+
+### Permanent Scripts and Tools
+Place in the following locations based on purpose:
+- **Development scripts**: `scripts/` directory (create if needed)
+  - Build automation scripts
+  - Deployment helpers
+  - Development utilities
+- **Test utilities**: `test/utils/` directory
+  - Test data generators
+  - Testing helper scripts
+
+### Temporary Files
+Use these locations for temporary work that can be deleted anytime:
+- **`tmp/`** directory (create if needed) - For all temporary scripts and experiments
+- **`scratch/`** directory - Alternative for quick experiments
+- **`.tmp/`** directory - For hidden temporary files
+
+**Important**: Add `tmp/`, `scratch/`, and `.tmp/` to `.gitignore` to prevent accidental commits of temporary files.
+
+### Never Place Files In:
+- Root directory (unless it's a configuration file like `.env`)
+- Inside `viyv_mcp/` package directory (unless adding new features)
+- Random subdirectories without clear purpose
+
+## MCP Tool Development Guidelines
+
+### Tool Parameter Type Annotations
+- Use `Annotated` and `Field` from FastMCP for parameter definitions
+- Example: `query: Annotated[str, Field(description="Search query")]`
+- Optional parameters should have default values
+
+### Claude CLI Integration
+- The `--resume` feature uses session IDs to continue conversations
+- Use JSON format for session persistence
+- Protect file access in async operations with `asyncio.Lock()`
+
+### ChatGPT Compatibility Requirements
+For ChatGPT integration, these tools are mandatory:
+- **`search`** tool: Must accept `query` parameter (required) and return results in `resource_link` format
+- **`fetch`** tool: Must accept `id` parameter (required) - note this is an ID, not a URI
+- The `annotations` parameter is not currently supported in viyv_mcp
+
+### MCP Protocol Notes
+- tools/list requests require a valid session ID
+- initialize requests must include `protocolVersion` and `capabilities`

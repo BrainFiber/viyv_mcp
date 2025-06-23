@@ -12,7 +12,6 @@ import io
 import os
 import pathlib
 import uuid
-import imghdr
 from typing import Annotated, List, Literal, Optional, Sequence, Union
 
 from agents import RunContextWrapper
@@ -55,7 +54,18 @@ def _b64_to_file(b64_or_uri: str, *, filename: Optional[str] = None) -> io.Bytes
     except Exception as exc:
         raise ValueError("Invalid base64 image string") from exc
 
-    detected_fmt = imghdr.what(None, raw) or "png"
+    # imghdrの代わりに、画像フォーマットをマジックナンバーで判定
+    if raw[:8] == b'\x89PNG\r\n\x1a\n':
+        detected_fmt = "png"
+    elif raw[:3] == b'\xff\xd8\xff':
+        detected_fmt = "jpeg"
+    elif raw[:6] in (b'GIF87a', b'GIF89a'):
+        detected_fmt = "gif"
+    elif raw[:4] == b'RIFF' and raw[8:12] == b'WEBP':
+        detected_fmt = "webp"
+    else:
+        detected_fmt = "png"  # デフォルト
+    
     ext = {"jpeg": "jpg"}.get(detected_fmt, detected_fmt)
 
     bio = io.BytesIO(raw)
@@ -73,7 +83,18 @@ async def _url_to_file(url: str, *, filename: Optional[str] = None) -> io.BytesI
             resp.raise_for_status()
             data = await resp.read()
 
-    detected_fmt = imghdr.what(None, data) or "png"
+    # imghdrの代わりに、画像フォーマットをマジックナンバーで判定
+    if data[:8] == b'\x89PNG\r\n\x1a\n':
+        detected_fmt = "png"
+    elif data[:3] == b'\xff\xd8\xff':
+        detected_fmt = "jpeg"
+    elif data[:6] in (b'GIF87a', b'GIF89a'):
+        detected_fmt = "gif"
+    elif data[:4] == b'RIFF' and data[8:12] == b'WEBP':
+        detected_fmt = "webp"
+    else:
+        detected_fmt = "png"  # デフォルト
+    
     ext = {"jpeg": "jpg"}.get(detected_fmt, detected_fmt)
 
     bio = io.BytesIO(data)

@@ -2,6 +2,7 @@
 import pkgutil
 import importlib
 import logging
+import os
 
 def auto_register_modules(mcp, package_name: str):
     """
@@ -10,8 +11,18 @@ def auto_register_modules(mcp, package_name: str):
     """
     try:
         package = importlib.import_module(package_name)
+    except ModuleNotFoundError:
+        # ディレクトリが存在しない場合は静かにスキップ
+        # これはオプショナルな機能（entries, resources等）のため正常な動作
+        package_path = package_name.replace('.', '/')
+        if not os.path.exists(package_path):
+            logging.debug(f"オプショナルパッケージ {package_name} はスキップされました（ディレクトリが存在しません）")
+        else:
+            logging.debug(f"パッケージ {package_name} のインポートをスキップしました")
+        return
     except Exception as e:
-        logging.error(f"パッケージ {package_name} のインポートに失敗しました: {e}")
+        # その他のエラーは警告として記録
+        logging.warning(f"パッケージ {package_name} のインポートに失敗しました: {e}")
         return
 
     for finder, modname, is_pkg in pkgutil.walk_packages(package.__path__, package_name + "."):

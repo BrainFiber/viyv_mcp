@@ -1,0 +1,14 @@
+[project]
+name = "claude_code_mcp"
+version = "0.1.0"
+description = "Claude Code CLI exposed through MCP server"
+authors = [
+    {name="Claude Code MCP Example", email="example@viyv-mcp.com"}
+]
+dependencies = [
+    "fastmcp>=2.2.5",
+    "starlette>=0.25.0",
+    "uvicorn>=0.22.0",
+    "viyv_mcp>=0.1.0",
+    "openai-agents>=0.0.13",
+]

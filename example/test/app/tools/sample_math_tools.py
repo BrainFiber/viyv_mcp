@@ -64,7 +64,7 @@ def register(mcp: FastMCP):  # auto_register_modules から呼ばれる
             Field(
                 title="数列",
                 description="平均を取りたい数値のリスト",
-                min_items=1,
+                min_length=1,
             ),
         ]
     ) -> float:

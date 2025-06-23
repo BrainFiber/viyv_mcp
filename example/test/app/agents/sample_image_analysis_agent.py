@@ -8,7 +8,6 @@ Base64 データ URI として ChatCompletion に添付します。
 
 import asyncio
 import base64
-import imghdr
 import os
 from pathlib import Path
 from typing import Annotated, List
@@ -45,7 +44,7 @@ async def image_analysis_agent(
         Field(
             title="解析対象画像の URL 一覧",
             description="例: ['http://localhost:8000/static/upload/xxx.jpg', ...]",
-            min_items=1,
+            min_length=1,
         ),
     ],
     analysis_prompt: Annotated[
@@ -81,7 +80,18 @@ async def image_analysis_agent(
         if len(raw) > _MAX_BYTES:
             return f"{idx+1} 枚目の画像が 20 MB を超えています。"
 
-        fmt = imghdr.what(None, raw)
+        # imghdrの代わりに、画像フォーマットをマジックナンバーで判定
+        if raw[:8] == b'\x89PNG\r\n\x1a\n':
+            fmt = "png"
+        elif raw[:3] == b'\xff\xd8\xff':
+            fmt = "jpeg"
+        elif raw[:6] in (b'GIF87a', b'GIF89a'):
+            fmt = "gif"
+        elif raw[:4] == b'RIFF' and raw[8:12] == b'WEBP':
+            fmt = "webp"
+        else:
+            fmt = None
+        
         mime = _ALLOWED_MIME.get(fmt)
         if not mime:
             return f"{idx+1} 枚目の画像フォーマット ({fmt}) はサポート外です。"

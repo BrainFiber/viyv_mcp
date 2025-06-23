@@ -1,0 +1,11 @@
+# Python
+__pycache__/
+*.pyc
+.DS_Store
+
+# Claude sessions
+.claude_sessions/
+app/claude_cli_sessions.json
+
+# uv
+uv.lock

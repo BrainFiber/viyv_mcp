@@ -13,7 +13,6 @@ from __future__ import annotations
 from typing import Annotated, List, Optional, Tuple
 
 import base64
-import imghdr
 import logging
 import os
 import re
@@ -21,6 +20,7 @@ import uuid
 import pathlib
 from io import BytesIO
 from urllib.parse import unquote, urlparse
+from contextlib import asynccontextmanager
 
 import aiohttp
 from PIL import Image
@@ -73,7 +73,18 @@ async def slack_file_to_base64(url: str, token: str) -> Tuple[str, str, bytes]:
     if len(data) > MAX_IMAGE_BYTES:
         raise ValueError("画像サイズが 10 MiB を超えています")
 
-    fmt = imghdr.what(None, data)
+    # imghdrの代わりに、画像フォーマットをマジックナンバーで判定
+    if data[:8] == b'\x89PNG\r\n\x1a\n':
+        fmt = "png"
+    elif data[:3] == b'\xff\xd8\xff':
+        fmt = "jpeg"
+    elif data[:6] in (b'GIF87a', b'GIF89a'):
+        fmt = "gif"
+    elif data[:4] == b'RIFF' and data[8:12] == b'WEBP':
+        fmt = "webp"
+    else:
+        fmt = None
+    
     mime = {
         "jpeg": "image/jpeg",
         "png": "image/png",
@@ -164,11 +175,16 @@ def slack_entry() -> FastAPI:
         BOT_USER_ID = res["user_id"]
         logging.info(f"Bot User ID: {BOT_USER_ID}")
 
-    api = FastAPI(title="Slack Webhook (Bolt)")
-
-    @api.on_event("startup")
-    async def on_startup():
+    
+    
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        # startup
         await fetch_bot_user_id()
+        yield
+        # shutdown (必要に応じて処理を追加)
+    
+    api = FastAPI(title="Slack Webhook (Bolt)", lifespan=lifespan)
 
     # ───────── メンションイベント ────────────────────────────
     @bolt_app.event("app_mention")
