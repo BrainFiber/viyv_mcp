@@ -1,10 +1,10 @@
-Hello Claude!
+こんにちは、Claude！
 
-This is a test file for the Claude Code CLI MCP server.
-You can use this file to test various operations.
+これはClaude Code CLI MCPサーバーのテストファイルです。
+このファイルを使って様々な操作をテストできます。
 
-Some example tasks:
-- Read this file
-- Modify its contents
-- Create new files
-- Perform analysis
+タスクの例：
+- このファイルを読む
+- 内容を変更する
+- 新しいファイルを作成する
+- 分析を実行する

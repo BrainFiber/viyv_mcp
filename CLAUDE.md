@@ -177,7 +177,7 @@ Core dependencies include:
 - The `@agent` decorator creates both a tool and registers it in the agent registry
 - Static files are served from the path configured in `STATIC_DIR`
 - All decorators work by finding the FastMCP instance from the call stack
-- The package is distributed on PyPI as `viyv_mcp` (current version: 0.1.3)
+- The package is distributed on PyPI as `viyv_mcp` (current version: 0.1.4)
 - Generated projects use `uv` for dependency management via `pyproject.toml`
 - Tools using RunContextWrapper can access Slack events and user context when available
 - The test/ directory contains working examples rather than unit tests - use these as reference implementations

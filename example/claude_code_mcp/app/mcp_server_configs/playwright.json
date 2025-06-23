@@ -1,0 +1,7 @@
+{
+  "name": "playwright",
+  "command": "npx-for-claude",
+  "args": ["@playwright/mcp@latest"],
+  "env": {},
+  "tags": ["browser", "automation", "playwright"]
+}

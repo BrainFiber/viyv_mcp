@@ -21,6 +21,9 @@ logger = logging.getLogger(__name__)
 # Session information storage file
 SESSION_FILE = Path(__file__).parent.parent / "claude_cli_sessions.json"
 
+# Default working directory for Claude CLI
+CLAUDE_WORKSPACE = Path(__file__).parent.parent / "claude_workspace"
+
 # Lock for file operations
 _file_lock = asyncio.Lock()
 
@@ -57,7 +60,7 @@ async def save_session_info(context_id: str, session_id: str = None, messages: L
     sessions[context_id] = session_data
     await save_sessions(sessions)
 
-async def run_claude_cli(prompt: str, context_id: str, cwd: str = None, max_turns: int = 3) -> str:
+async def run_claude_cli(prompt: str, context_id: str, max_turns: int = 3) -> str:
     """Execute Claude CLI directly with session support"""
     logger.info(f"run_claude_cli called with prompt: {prompt[:50]}..., context_id: {context_id}")
     
@@ -68,10 +71,7 @@ async def run_claude_cli(prompt: str, context_id: str, cwd: str = None, max_turn
     logger.info(f"Claude CLI found at: {claude_path}")
     
     # Setup working directory
-    if cwd:
-        working_dir = Path(cwd)
-    else:
-        working_dir = Path(__file__).parent.parent / "claude_workspace"
+    working_dir = CLAUDE_WORKSPACE
     working_dir.mkdir(parents=True, exist_ok=True)
     
     # Check existing session information
@@ -227,29 +227,21 @@ def register(mcp: FastMCP):
     """Register tools with MCP"""
     logger.info("Registering Claude CLI tools...")
     
-    @tool(description="Execute Claude CLI with session support (--resume)", tags={"claude", "cli", "code"})
+    @tool(description="Create, analyze, and modify code files with an AI developer assistant that maintains conversation context", tags={"claude", "cli", "code", "developer"})
     async def claude_cli(
         wrapper: RunContextWrapper[RunContext],
         prompt: Annotated[
             str,
             Field(
-                title="Prompt",
-                description="Prompt to send to Claude CLI",
+                title="Development Task",
+                description="Describe what you want to develop, analyze, or modify (e.g., 'Create a Python web scraper', 'Add error handling to the existing code', 'Analyze and optimize the performance')",
             ),
         ],
         context_id: Annotated[
             Optional[str],
             Field(
                 title="Context ID",
-                description="Session ID for continuing conversation (omit for new session, 'latest' for most recent session)",
-                default=None,
-            ),
-        ] = None,
-        cwd: Annotated[
-            Optional[str],
-            Field(
-                title="Working Directory",
-                description="Directory path where Claude CLI operates",
+                description="Session ID for continuing previous development work (omit for new task, 'latest' to continue most recent work)",
                 default=None,
             ),
         ] = None,
@@ -257,14 +249,14 @@ def register(mcp: FastMCP):
             int,
             Field(
                 title="Max Turns",
-                description="Maximum number of turns for Claude CLI interaction (recommended: 3+)",
-                default=3,
+                description="Maximum interaction rounds for complex tasks (recommended: 3-5 for most development tasks)",
+                default=10,
                 ge=1,
-                le=10,
+                le=50,
             ),
         ] = 3,
     ) -> str:
-        """Execute code using Claude CLI directly with conversation history persistence via --resume"""
+        """An AI developer assistant that can create, analyze, debug, and improve code. It maintains conversation context across sessions, allowing you to build complex applications iteratively."""
         logger.info(f"claude_cli called with context_id: {context_id}")
         
         # Process context_id
@@ -291,25 +283,25 @@ def register(mcp: FastMCP):
         else:
             logger.info(f"Using provided context_id: {context_id}")
         
-        result = await run_claude_cli(prompt, context_id, cwd, max_turns)
+        result = await run_claude_cli(prompt, context_id, max_turns)
         
         return f"Context ID: {context_id}\n\n{result}"
     
-    @tool(description="List Claude CLI sessions", tags={"claude", "cli", "session"})
+    @tool(description="View your previous development sessions and their progress", tags={"claude", "cli", "session", "history"})
     async def list_claude_cli_sessions(
         wrapper: RunContextWrapper[RunContext],
         limit: Annotated[
             int,
             Field(
-                title="Display Limit",
-                description="Number of sessions to display (from most recent)",
+                title="Number of Sessions",
+                description="How many recent development sessions to show",
                 default=10,
                 ge=1,
                 le=50,
             ),
         ] = 10,
     ) -> str:
-        """Display list of saved Claude CLI sessions"""
+        """Show your development history including what was worked on and when, making it easy to resume previous projects"""
         sessions = await load_sessions()
         
         if not sessions:
@@ -336,18 +328,18 @@ def register(mcp: FastMCP):
         
         return "\n".join(result)
     
-    @tool(description="Delete a Claude CLI session", tags={"claude", "cli", "session"})
+    @tool(description="Clean up old development sessions to free up storage", tags={"claude", "cli", "session", "cleanup"})
     async def delete_claude_cli_session(
         wrapper: RunContextWrapper[RunContext],
         context_id: Annotated[
             str,
             Field(
-                title="Context ID",
-                description="Session ID to delete",
+                title="Session ID",
+                description="The ID of the development session to remove",
             ),
         ],
     ) -> str:
-        """Delete a specific Claude CLI session"""
+        """Remove a development session and its history when you no longer need it"""
         sessions = await load_sessions()
         
         if context_id not in sessions:
@@ -358,11 +350,11 @@ def register(mcp: FastMCP):
         
         return f"Session '{context_id}' deleted successfully."
     
-    @tool(description="Get Claude CLI version and availability", tags={"claude", "cli", "info"})
+    @tool(description="Check if the AI developer assistant is properly installed and ready to use", tags={"claude", "cli", "info", "status"})
     async def claude_cli_version(
         wrapper: RunContextWrapper[RunContext],
     ) -> str:
-        """Check if Claude CLI is available and get version information"""
+        """Verify that the development environment is set up correctly and ready for coding tasks"""
         claude_path = shutil.which('claude')
         
         if not claude_path:
