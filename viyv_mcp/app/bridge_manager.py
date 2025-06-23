@@ -4,6 +4,7 @@ import os
 import json
 import glob
 import logging
+import pathlib
 from typing import List, Tuple, Set
 
 from mcp import ClientSession, types
@@ -16,7 +17,8 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Resource モデルのフィールドを動的に確認して互換レイヤを作る
 # ---------------------------------------------------------------------------
-_RESOURCE_FIELDS = set(types.Resource.__fields__.keys())
+# Pydantic V2では__fields__がmodel_fieldsに変更された
+_RESOURCE_FIELDS = set(getattr(types.Resource, 'model_fields', types.Resource.__dict__).keys())
 _RESOURCE_USES_URI_TEMPLATE = "uriTemplate" in _RESOURCE_FIELDS          # 旧仕様
 _RESOURCE_USES_URI = "uri" in _RESOURCE_FIELDS                           # 新仕様
 _RESOURCE_USES_NAME = "name" in _RESOURCE_FIELDS
@@ -62,6 +64,13 @@ async def init_bridges(
 
         # 環境変数マージ（OS が優先）
         env_merged = {k: os.environ.get(k, v) for k, v in json_env.items()}
+
+        # cwdが指定されていて存在しない場合は作成
+        if cwd:
+            cwd_path = pathlib.Path(cwd)
+            if not cwd_path.exists():
+                logger.info(f"Creating working directory: {cwd}")
+                cwd_path.mkdir(parents=True, exist_ok=True)
 
         logger.info(f"=== Starting external MCP server '{name}' ===")
 
@@ -360,7 +369,8 @@ def _register_tool_bridge(mcp: FastMCP, session: ClientSession, tool_info: types
 
     bridged_tool.__doc__ = desc
 
-    mcp.add_tool(name=tool_name, fn=bridged_tool, description=desc, tags=cfg_tags)
+    # FastMCPにツールを登録（デコレータ形式で）
+    mcp.tool(name=tool_name, description=desc, tags=cfg_tags)(bridged_tool)
 
 
 def _register_resource_bridge(mcp: FastMCP, session: ClientSession, rinfo: types.Resource):

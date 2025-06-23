@@ -28,7 +28,6 @@ from typing import (
 )
 
 import aiohttp
-import imghdr
 from PIL import Image
 from fastapi import FastAPI, Request
 from pydantic import Field
@@ -215,7 +214,18 @@ class SlackAdapter:
         if len(raw) > self.max_file_bytes:
             raise ValueError("ファイルサイズが 10 MiB を超えています")
 
-        fmt = imghdr.what(None, raw)
+        # imghdrの代わりに、画像フォーマットをマジックナンバーで判定
+        if raw[:8] == b'\x89PNG\r\n\x1a\n':
+            fmt = "png"
+        elif raw[:3] == b'\xff\xd8\xff':
+            fmt = "jpeg"
+        elif raw[:6] in (b'GIF87a', b'GIF89a'):
+            fmt = "gif"
+        elif raw[:4] == b'RIFF' and raw[8:12] == b'WEBP':
+            fmt = "webp"
+        else:
+            fmt = None
+        
         mime = {
             "jpeg": "image/jpeg",
             "png": "image/png",

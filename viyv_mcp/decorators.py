@@ -208,6 +208,24 @@ def _wrap_callable_with_tools(
         try:
             if "tools" in inspect.signature(fn).parameters:
                 kwargs["tools"] = tools_map
+            
+            # wrapperパラメータが存在する場合、RunContextWrapperインスタンスを作成
+            fn_sig = inspect.signature(fn)
+            if any(_is_wrapper(p) for p in fn_sig.parameters.values()):
+                # RunContextWrapperのインスタンスを作成
+                if RunContextWrapper is not None:
+                    from viyv_mcp.run_context import RunContext
+                    wrapper_instance = RunContextWrapper[RunContext](None)  # type: ignore
+                    # 最初の引数として追加
+                    if args:
+                        args = (wrapper_instance,) + args
+                    else:
+                        # または kwargs に追加
+                        for param_name, param in fn_sig.parameters.items():
+                            if _is_wrapper(param):
+                                kwargs[param_name] = wrapper_instance
+                                break
+            
             return (
                 await fn(*args, **kwargs)
                 if inspect.iscoroutinefunction(fn)
