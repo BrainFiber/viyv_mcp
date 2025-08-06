@@ -63,7 +63,7 @@ async def _collect_tools_map(
     - use_tags / exclude_tags   … タグでフィルタ
     """
     registered: Dict[str, Any] = {
-        info.name: info for info in mcp._tool_manager.list_tools()
+        info.name: info for info in await mcp._tool_manager.list_tools()
     }
 
     # ------- ① まず候補集合を決める -------------------------------------- #
