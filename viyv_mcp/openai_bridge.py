@@ -23,7 +23,7 @@ from typing import (
     get_origin,
 )
 
-from pydantic import BaseModel, Field, ValidationError, create_model
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, create_model
 from viyv_mcp.agent_runtime import get_tools
 
 # ──────────────────────────────── SDK 遅延 import ────────────────────────────────
@@ -103,13 +103,9 @@ def _wrap_with_pydantic(call_fn: Callable) -> Callable[..., Coroutine]:
 
     ArgsModel: type[BaseModel] = create_model(          # type: ignore
         f"{call_fn.__name__}_args",
-        __config__=type(                                # ★ ここだけ変更
-            "Config",
-            (),
-            {
-                "extra": "forbid",
-                "arbitrary_types_allowed": True,  # ← 独自型を許可
-            },
+        __config__=ConfigDict(                          # ★ Pydantic v2スタイル
+            extra="forbid",
+            arbitrary_types_allowed=True,  # ← 独自型を許可
         ),
         **fields,
     )

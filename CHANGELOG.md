@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.6] - 2025-08-21
+
+### Fixed
+- Fixed Pydantic v2 compatibility issue in `openai_bridge.py`
+  - Changed from Pydantic v1 style `type("Config", ...)` to v2 style `ConfigDict(...)`
+  - Resolves `TypeError: 'type' object is not iterable` when using `build_function_tools()`
+  - Affects all agents using OpenAI Agents SDK integration
+
+## [0.1.5] - 2025-08-20
+
+### Added
+- Support for MCP protocol version 2025-06-18
+- Enhanced error handling and validation
+
 ## [0.1.4] - 2025-06-23
 
 ### Added
