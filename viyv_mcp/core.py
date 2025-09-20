@@ -13,6 +13,8 @@ from viyv_mcp.app.registry import auto_register_modules
 from viyv_mcp.app.bridge_manager import init_bridges, close_bridges
 from viyv_mcp.app.config import Config
 from viyv_mcp.app.entry_registry import list_entries
+from viyv_mcp.app.mcp_initialize_fix import monkey_patch_mcp_validation
+from viyv_mcp.app.request_interceptor import MCPRequestInterceptor, AsyncRequestBodyMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +23,9 @@ class ViyvMCP:
     """Streamable HTTP + 静的配信 + エントリー群を 1 つにまとめる ASGI アプリ"""
 
     def __init__(self, server_name: str = "My Streamable HTTP MCP Server") -> None:
+        # MCP初期化の互換性パッチを適用
+        monkey_patch_mcp_validation()
+
         self.server_name = server_name
         self._mcp: FastMCP | None = None
         self._asgi_app = self._create_asgi_app()
@@ -49,7 +54,20 @@ class ViyvMCP:
         # --- MCP サブアプリ（Streamable HTTP） --------------------------- #
         self._mcp = self._create_mcp_server()
         # `/mcp` がデフォルト。ルート直下にしたい場合は path="/" とする
-        mcp_app = self._mcp.http_app(path="/")          # Streamable HTTP
+        mcp_base_app = self._mcp.http_app(path="/")          # Streamable HTTP
+
+        # MCPアプリにインターセプターミドルウェアを適用
+        from starlette.middleware import Middleware
+        from starlette.applications import Starlette as StarletteApp
+
+        # ミドルウェアラップされたMCPアプリ
+        mcp_app = StarletteApp(
+            routes=[Mount("/", app=mcp_base_app)],
+            middleware=[
+                Middleware(AsyncRequestBodyMiddleware),
+                Middleware(MCPRequestInterceptor, strict_validation=False),
+            ]
+        )
 
         # --- 静的ファイル ------------------------------------------------- #
         STATIC_DIR = os.getenv(
@@ -88,7 +106,7 @@ class ViyvMCP:
         @asynccontextmanager
         async def lifespan(app):
             # ① MCP 側の session/lifespan を起動
-            async with mcp_app.router.lifespan_context(app):
+            async with mcp_base_app.router.lifespan_context(app):
                 # ② 外部ブリッジなど自前初期化
                 await bridges_startup()
                 try:

@@ -14,3 +14,16 @@ test/uv.lock
 
 # Local test outputs
 test/static
+
+# Temporary directories for development
+tmp/
+scratch/
+.tmp/
+example/test/static/images/*
+example/test/static/upload/*
+
+# Environment variables (SECURITY)
+.env
+example/*/.env
+**/.env
+

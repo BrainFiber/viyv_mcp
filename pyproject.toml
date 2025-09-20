@@ -15,7 +15,7 @@ authors = [
 keywords = ["mcp", "fastmcp", "starlette", "uvicorn"]
 dependencies = [
   "starlette>=0.25.0",
-  "fastmcp>=2.10.0",
+  "fastmcp>=2.12.3",
   "uvicorn>=0.22.0",
   "fastapi>=0.115.12",
   "build>=1.2.2.post1",
@@ -45,3 +45,6 @@ include = ["viyv_mcp*"]
   "templates/*",
   "templates/**/*"
 ]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
