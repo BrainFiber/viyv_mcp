@@ -62,36 +62,33 @@ def monkey_patch_mcp_validation():
     このパッチは以下の処理を行います：
     1. clientInfoフィールドをオプショナルに変更
     2. 必要に応じてデフォルト値を設定
+
+    Pydantic v2対応：model_validateメソッドをパッチして、
+    __pydantic_validator__の読み取り専用制限を回避
     """
-    import sys
-    from mcp.server.lowlevel.server import Server
-    from mcp.types import InitializeRequest, InitializeRequestParams
+    try:
+        from mcp.types import InitializeRequestParams
 
-    # オリジナルのバリデーションメソッドを保存
-    original_validate = None
-    if hasattr(InitializeRequestParams, '__pydantic_validator__'):
-        original_validate = InitializeRequestParams.__pydantic_validator__.validate_python
+        # オリジナルのmodel_validateメソッドを保存
+        original_model_validate = InitializeRequestParams.model_validate
 
-    def patched_validate(value: Any, *args, **kwargs):
-        """カスタムバリデーション：clientInfoが無い場合にデフォルト値を設定"""
-        if isinstance(value, dict):
-            if 'clientInfo' not in value or value['clientInfo'] is None:
-                # デフォルトのclientInfoを設定
-                value['clientInfo'] = {
+        def patched_model_validate(cls, obj, *, strict=None, from_attributes=None, context=None):
+            """カスタムバリデーション：clientInfoが無い場合にデフォルト値を設定"""
+            if isinstance(obj, dict) and ('clientInfo' not in obj or obj['clientInfo'] is None):
+                # objをコピーして変更（元のobjを変更しないため）
+                obj = obj.copy()
+                obj['clientInfo'] = {
                     'name': 'unknown-client',
                     'version': '0.0.0'
                 }
                 logger.debug("clientInfo が提供されなかったため、デフォルト値を設定しました")
 
-        # オリジナルのバリデーションを実行
-        if original_validate:
-            return original_validate(value, *args, **kwargs)
-        else:
-            # Pydantic v2の場合
-            return InitializeRequestParams.model_validate(value)
+            # オリジナルのバリデーションを実行
+            return original_model_validate.__func__(cls, obj, strict=strict, from_attributes=from_attributes, context=context)
 
-    # パッチを適用
-    if hasattr(InitializeRequestParams, '__pydantic_validator__'):
-        InitializeRequestParams.__pydantic_validator__.validate_python = patched_validate
+        # model_validateメソッドをパッチ
+        InitializeRequestParams.model_validate = classmethod(patched_model_validate)
+        logger.info("MCP初期化バリデーションのパッチを適用しました（model_validate method patched）")
 
-    logger.info("MCP初期化バリデーションのパッチを適用しました")
+    except Exception as e:
+        logger.error(f"MCP初期化バリデーションのパッチ適用に失敗しました: {e}")
