@@ -52,12 +52,8 @@ class ViyvMCP:
     def _create_asgi_app(self):
         # --- MCP サブアプリ（Streamable HTTP） --------------------------- #
         self._mcp = self._create_mcp_server()
-        # `/mcp` がデフォルト。ルート直下にしたい場合は path="/" とする
-        mcp_base_app = self._mcp.http_app(path="/")          # Streamable HTTP
-
-        # MCPアプリを直接使用（SSEサポートのため、ミドルウェアを削除）
-        # ミドルウェアはSSEストリームを妨害するため、直接FastMCPのアプリを使用
-        mcp_app = mcp_base_app
+        # MCPアプリを生成（パスは / で、後でルーティング時に /mcp を処理）
+        self._mcp_app = self._mcp.http_app(path="/")          # Streamable HTTP
 
         # --- 静的ファイル ------------------------------------------------- #
         STATIC_DIR = os.getenv(
@@ -76,7 +72,7 @@ class ViyvMCP:
             if self._bridges:
                 await close_bridges(self._bridges)
 
-        # --- ルーティング ------------------------------------------------- #
+        # --- その他のルートのためのStarletteアプリ ------------------------- #
         routes = [
             Mount(path, app=factory() if callable(factory) else factory)
             for path, factory in list_entries()
@@ -89,14 +85,12 @@ class ViyvMCP:
                 name="static",
             )
         )
-        # MCP を /mcp にマウント（必要に応じて変更可）
-        routes.append(Mount("/mcp", app=mcp_app))
 
         # --- 複合 lifespan ------------------------------------------------ #
         @asynccontextmanager
         async def lifespan(app):
             # ① MCP 側の session/lifespan を起動
-            async with mcp_base_app.router.lifespan_context(app):
+            async with self._mcp_app.router.lifespan_context(app):
                 # ② 外部ブリッジなど自前初期化
                 await bridges_startup()
                 try:
@@ -104,7 +98,10 @@ class ViyvMCP:
                 finally:
                     await bridges_shutdown()
 
-        return Starlette(routes=routes, lifespan=lifespan)
+        self._starlette_app = Starlette(routes=routes, lifespan=lifespan)
+
+        # カスタムASGIルーターを返す
+        return self
 
     # --------------------------------------------------------------------- #
     #  ASGI エントリポイント                                                 #
@@ -112,5 +109,18 @@ class ViyvMCP:
     def get_app(self):
         return self._asgi_app
 
-    def __call__(self, scope, receive, send):
-        return self._asgi_app(scope, receive, send)
+    async def __call__(self, scope, receive, send):
+        """カスタムASGIルーター: /mcpパスを直接MCPアプリに、それ以外をStarletteに"""
+        path = scope.get("path", "")
+
+        # /mcp パスはMCPアプリに直接ルーティング（Starletteを経由しない）
+        if path.startswith("/mcp"):
+            # パスを調整: /mcp/xxx -> /xxx
+            new_path = path[4:] if len(path) > 4 else "/"
+            scope = dict(scope)
+            scope["path"] = new_path
+            scope["raw_path"] = new_path.encode()
+            return await self._mcp_app(scope, receive, send)
+        else:
+            # その他のパスはStarletteアプリに
+            return await self._starlette_app(scope, receive, send)
