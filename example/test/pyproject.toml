@@ -6,10 +6,10 @@ authors = [
     {name="YourName", email="you@example.com"}
 ]
 dependencies = [
-    "fastmcp>=2.3.3",
+    "fastmcp>=2.12.3",
     "starlette>=0.25.0",
     "uvicorn>=0.22.0",
-    "viyv_mcp>=0.1.5",
+    "viyv_mcp>=0.1.8",
     "openai-agents>=0.0.13",
     "pydantic>=2",
     "slack-bolt>=1.23.0",

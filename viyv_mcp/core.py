@@ -14,7 +14,6 @@ from viyv_mcp.app.bridge_manager import init_bridges, close_bridges
 from viyv_mcp.app.config import Config
 from viyv_mcp.app.entry_registry import list_entries
 from viyv_mcp.app.mcp_initialize_fix import monkey_patch_mcp_validation
-from viyv_mcp.app.request_interceptor import MCPRequestInterceptor, AsyncRequestBodyMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -56,18 +55,9 @@ class ViyvMCP:
         # `/mcp` がデフォルト。ルート直下にしたい場合は path="/" とする
         mcp_base_app = self._mcp.http_app(path="/")          # Streamable HTTP
 
-        # MCPアプリにインターセプターミドルウェアを適用
-        from starlette.middleware import Middleware
-        from starlette.applications import Starlette as StarletteApp
-
-        # ミドルウェアラップされたMCPアプリ
-        mcp_app = StarletteApp(
-            routes=[Mount("/", app=mcp_base_app)],
-            middleware=[
-                Middleware(AsyncRequestBodyMiddleware),
-                Middleware(MCPRequestInterceptor, strict_validation=False),
-            ]
-        )
+        # MCPアプリを直接使用（SSEサポートのため、ミドルウェアを削除）
+        # ミドルウェアはSSEストリームを妨害するため、直接FastMCPのアプリを使用
+        mcp_app = mcp_base_app
 
         # --- 静的ファイル ------------------------------------------------- #
         STATIC_DIR = os.getenv(
