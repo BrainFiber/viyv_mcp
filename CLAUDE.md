@@ -45,8 +45,15 @@ When working with projects created via `create-viyv-mcp`:
 # Install dependencies
 uv sync
 
-# Run the server
+# Run the server (single worker)
 uv run python main.py
+
+# Run with stateless HTTP mode (for multi-worker support)
+STATELESS_HTTP=true uv run python main.py
+
+# Production deployment with multiple workers (requires gunicorn)
+uv pip install gunicorn
+STATELESS_HTTP=true uv run gunicorn test_app:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000
 
 # The server runs on 0.0.0.0:8000 by default
 # Health check: GET /health returns {"status":"ok"}
@@ -63,10 +70,12 @@ uv run python main.py
   - `agent_runtime.py` - Agent runtime utilities for tool execution
   - `run_context.py` - Context management for Slack and other integrations
   - `app/` - Core application components
-    - `config.py` - Configuration management (HOST, PORT, etc.)
+    - `config.py` - Configuration management (HOST, PORT, STATELESS_HTTP, etc.)
     - `registry.py` - Auto-registration of modules
     - `bridge_manager.py` - External MCP server management
     - `entry_registry.py` - Registry for FastAPI app entries
+    - `mcp_initialize_fix.py` - Pydantic v2 compatibility patches for MCP protocol
+    - `lifespan.py` - Application lifespan management
     - `adapters/slack_adapter.py` - Slack event handling and integration
   - `templates/` - Project template files
 
@@ -80,11 +89,13 @@ uv run python main.py
 
 4. **Dynamic Tool Injection**: Tools are refreshed on every request to ensure agents have the latest available tools.
 
-5. **ASGI Architecture**: Built on Starlette with FastMCP mounted at `/mcp` by default, supporting SSE-based communication.
+5. **ASGI Architecture**: Custom ASGI-level routing that sends `/mcp` paths directly to the MCP app, bypassing Starlette middleware to fix SSE streaming issues.
 
-6. **RunContextWrapper Pattern**: Tools receive a `RunContextWrapper[RunContext]` parameter that provides access to context like Slack events and user information.
+6. **RunContextWrapper Pattern**: Tools receive a `RunContextWrapper[RunContext]` parameter that provides access to context like Slack events and user information. The signature is manipulated to work with both FastMCP and OpenAI Agents SDK.
 
 7. **Signature Manipulation**: The decorator system manipulates function signatures to support `RunContextWrapper` for agent execution while maintaining clean JSON Schema generation for FastMCP.
+
+8. **Stateless HTTP Support**: New feature (v0.1.10) that enables stateless HTTP connections for multi-worker deployments. When enabled, session IDs are not required for MCP requests.
 
 ### Code Examples
 
@@ -137,15 +148,30 @@ Create JSON files in `app/mcp_server_configs/`:
   "args": ["path/to/mcp-server.js"],
   "env": {
     "API_KEY": "$API_KEY"
-  }
+  },
+  "cwd": "/path/to/working/directory",  // Optional: working directory
+  "tags": ["filesystem", "git"]          // Optional: tags for filtering
 }
 ```
 
 ### Integration Points
 
 - **Slack**: Use `SlackAdapter` to handle Slack events and attachments
+  - Full event handling with `@app_mention` support
+  - File upload/download capabilities
+  - Thread history building for conversation context
+  - Channel prompt extraction from topic/purpose
+  - RunContext integration for tool access
+
 - **OpenAI Agents**: Use `build_function_tools()` to convert MCP tools for OpenAI Agents SDK
+  - Function tool conversion with Pydantic validation
+  - Schema transformation (removes `default` keys, sets all fields as required)
+  - RunContextWrapper parameter injection
+  - Async wrapper for synchronous functions
+
 - **Custom Endpoints**: Use `@entry(path)` decorator to mount additional FastAPI apps
+  - Dynamic tool middleware injection
+  - Automatic tool refresh on requests
 
 ## Environment Variables
 
@@ -153,6 +179,11 @@ Create JSON files in `app/mcp_server_configs/`:
 - `PORT` - Server port (default: 8000)
 - `BRIDGE_CONFIG_DIR` - Directory for MCP server configs (default: app/mcp_server_configs)
 - `STATIC_DIR` - Static files directory (default: static/images)
+- `STATELESS_HTTP` - Enable stateless HTTP mode for multi-worker support (true/false, default: None)
+  - Values: "true", "1", "yes", "on" → True
+  - Values: "false", "0", "no", "off" → False
+  - When True: Session IDs are not required for MCP requests
+  - When False: Session management is enabled (default FastMCP behavior)
 
 ## Testing Approach
 
@@ -163,12 +194,14 @@ The repository includes a `test/` directory with sample implementations rather t
 
 ## Package Dependencies
 Core dependencies include:
-- `fastmcp>=2.3.3` - MCP protocol implementation
+- `fastmcp>=2.12.3` - MCP protocol implementation (recently upgraded for better compatibility)
 - `starlette>=0.25.0` - ASGI framework
 - `uvicorn>=0.22.0` - ASGI server
 - `slack-bolt>=1.23.0` - Slack integration
 - `openai-agents>=0.0.13` - OpenAI Agents SDK integration
 - `pytest>=7.0` - Testing framework
+- `pydantic>=2` - Data validation (v2 compatibility focus)
+- `aiohttp>=3.11.18` - Async HTTP client
 
 ## Important Notes
 
@@ -177,11 +210,50 @@ Core dependencies include:
 - The `@agent` decorator creates both a tool and registers it in the agent registry
 - Static files are served from the path configured in `STATIC_DIR`
 - All decorators work by finding the FastMCP instance from the call stack
-- The package is distributed on PyPI as `viyv_mcp` (current version: 0.1.4)
+- The package is distributed on PyPI as `viyv_mcp` (current version: 0.1.10)
 - Generated projects use `uv` for dependency management via `pyproject.toml`
 - Tools using RunContextWrapper can access Slack events and user context when available
 - The test/ directory contains working examples rather than unit tests - use these as reference implementations
 - External MCP servers are managed as child processes with stdio-based communication
+- ASGI-level routing fixes SSE streaming issues that occurred with middleware
+- MCP protocol version 2024-11-05 is supported with Pydantic v2 compatibility patches
+
+## Production Deployment
+
+### Multi-Worker Support
+For production environments requiring multiple workers:
+
+1. **Enable Stateless HTTP Mode**:
+   ```bash
+   export STATELESS_HTTP=true
+   ```
+
+2. **Use Gunicorn with Uvicorn Workers**:
+   ```bash
+   # Install gunicorn
+   uv pip install gunicorn
+
+   # Run with 4 workers
+   STATELESS_HTTP=true uv run gunicorn test_app:app \
+     -w 4 \
+     -k uvicorn.workers.UvicornWorker \
+     -b 0.0.0.0:8000
+   ```
+
+3. **Create a startup module** (test_app.py):
+   ```python
+   from viyv_mcp import ViyvMCP
+   from app.config import Config
+
+   stateless_http = Config.get_stateless_http()
+   app = ViyvMCP("My MCP Server", stateless_http=stateless_http).get_app()
+   ```
+
+### Performance Considerations
+- **Dynamic Tool Injection**: Tools are refreshed on every request, which may impact performance with many tools
+- **External MCP Bridges**: Each external server runs as a child process; monitor resource usage
+- **SSE Streaming**: Custom ASGI routing ensures efficient SSE streaming without middleware interference
+- **Session Management**: Use `STATELESS_HTTP=true` for better scalability in multi-worker setups
 
 ## File Placement Guidelines
 
@@ -229,5 +301,28 @@ For ChatGPT integration, these tools are mandatory:
 - The `annotations` parameter is not currently supported in viyv_mcp
 
 ### MCP Protocol Notes
-- tools/list requests require a valid session ID
+- Protocol version: 2024-11-05 (with compatibility patches for older versions)
+- tools/list requests require a valid session ID (unless `STATELESS_HTTP=true`)
 - initialize requests must include `protocolVersion` and `capabilities`
+- clientInfo field is patched for Pydantic v2 compatibility in mcp_initialize_fix.py
+
+## Troubleshooting
+
+### SSE Streaming Issues
+- The custom ASGI routing in `core.py` routes `/mcp` paths directly to avoid middleware conflicts
+- If SSE streaming fails, check that no additional middleware is interfering with the `/mcp` path
+
+### Protocol Compatibility
+- Pydantic v2 validation errors are patched in `mcp_initialize_fix.py`
+- If initialization fails with validation errors, check the MCP protocol version
+
+### Multi-Worker Issues
+- Uvicorn's `--workers` flag doesn't work well with the dynamic app creation
+- Use Gunicorn with UvicornWorker for proper multi-worker support
+- Always enable `STATELESS_HTTP=true` for multi-worker deployments
+
+### External MCP Server Issues
+- Check that the `command` exists and is executable
+- Environment variables in configs use `$VAR_NAME` syntax
+- Working directory (`cwd`) must exist if specified
+- Child processes are managed automatically; check logs for startup errors

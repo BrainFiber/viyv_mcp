@@ -21,11 +21,16 @@ logger = logging.getLogger(__name__)
 class ViyvMCP:
     """Streamable HTTP + 静的配信 + エントリー群を 1 つにまとめる ASGI アプリ"""
 
-    def __init__(self, server_name: str = "My Streamable HTTP MCP Server") -> None:
+    def __init__(
+        self,
+        server_name: str = "My Streamable HTTP MCP Server",
+        stateless_http: bool | None = None
+    ) -> None:
         # MCP初期化の互換性パッチを適用
         monkey_patch_mcp_validation()
 
         self.server_name = server_name
+        self.stateless_http = stateless_http
         self._mcp: FastMCP | None = None
         self._asgi_app = self._create_asgi_app()
         self._bridges = None
@@ -53,7 +58,10 @@ class ViyvMCP:
         # --- MCP サブアプリ（Streamable HTTP） --------------------------- #
         self._mcp = self._create_mcp_server()
         # MCPアプリを生成（パスは / で、後でルーティング時に /mcp を処理）
-        self._mcp_app = self._mcp.http_app(path="/")          # Streamable HTTP
+        self._mcp_app = self._mcp.http_app(
+            path="/",
+            stateless_http=self.stateless_http
+        )          # Streamable HTTP
 
         # --- 静的ファイル ------------------------------------------------- #
         STATIC_DIR = os.getenv(
