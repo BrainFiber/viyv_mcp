@@ -19,7 +19,6 @@ async def notion_agent(query: str) -> str:
 
     # --- ② OpenAI Agents SDK の Tool に変換 -------------------------------
     oa_tools = build_function_tools(use_tools=["API-post-search", "API-retrieve-a-page"])
-    print(oa_tools)
 
     # --- ③ エージェント定義 ----------------------------------------------
     try:

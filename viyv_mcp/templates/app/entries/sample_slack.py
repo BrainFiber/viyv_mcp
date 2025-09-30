@@ -117,7 +117,6 @@ def slack_entry() -> FastAPI:
                 f"スレッドの過去のメッセージから、質問に関連する内容を取得してください。質問：{text}",
             )
             result = await Runner.run(agent_, f"ユーザの質問に答えるために必要な情報をToolを利用し収集してください。メッセージ：{text} 過去のやり取り：{history_result.final_output}")
-            print(str(result))
             await Runner.run(
                 response_agent,
                 f"下記内容をユーザに回答してください。回答内容：{result.final_output} 元のメッセージ：{text}",

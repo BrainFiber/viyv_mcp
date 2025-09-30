@@ -32,7 +32,6 @@ async def calc_agent(expression: str) -> str:
 
     # --- ② OpenAI Agents SDK の Tool に変換 -------------------------------
     oa_tools = build_function_tools(use_tools=["add", "subtract"])
-    print(oa_tools)
 
     # --- ③ エージェント定義 ----------------------------------------------
     try:

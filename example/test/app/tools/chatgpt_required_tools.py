@@ -14,9 +14,8 @@ logger = logging.getLogger(__name__)
 
 def register(mcp: FastMCP):
     """MCPにツールを登録"""
-    print("DEBUG: Registering ChatGPT required tools (search/fetch)...")
     logger.info("Registering ChatGPT required tools (search/fetch)...")
-    
+
     @tool(
         description="Search the data source and return lightweight results",
         tags={"search", "chatgpt", "required"}

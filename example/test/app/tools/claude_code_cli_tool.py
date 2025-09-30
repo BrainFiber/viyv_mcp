@@ -228,9 +228,8 @@ async def run_claude_cli(prompt: str, context_id: str, cwd: str = None, max_turn
 
 def register(mcp: FastMCP):
     """MCPにツールを登録"""
-    print("DEBUG: register() function called for claude_code_cli_tool")
     logger.info("Registering claude_cli tool...")
-    
+
     @tool(description="Claude CLIを使用したコード実行（--resumeサポート版）", tags={"claude", "cli", "code"})
     async def claude_cli(
         wrapper: RunContextWrapper[RunContext],
@@ -275,9 +274,7 @@ def register(mcp: FastMCP):
         if context_id == "latest":
             # 最新のセッションを使用
             sessions = await load_sessions()
-            print("DEBUG: Loaded sessions:", sessions)
 
-            
             if sessions:
                 # 最終更新日時でソートして最新を取得
                 sorted_sessions = sorted(
