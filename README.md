@@ -206,6 +206,60 @@ def register(mcp):
         return get_resource_by_id(id)
 ```
 
+### 📂 Tool Grouping (New in v0.1.13)
+
+Organize tools into groups for better discoverability and UI presentation:
+
+```python
+from viyv_mcp import tool
+
+def register(mcp):
+    @tool(
+        description="Add two numbers",
+        group="計算ツール",  # Group name
+        title="加算"         # UI display name (optional)
+    )
+    def add(a: int, b: int) -> int:
+        return a + b
+
+    @tool(
+        description="Subtract two numbers",
+        group="計算ツール"  # Same group
+    )
+    def subtract(a: int, b: int) -> int:
+        return a - b
+
+    @tool(
+        description="Delete a file",
+        group="ファイルシステム",
+        destructive=True  # Destructive operation hint
+    )
+    def delete_file(path: str) -> bool:
+        import os
+        os.remove(path)
+        return True
+```
+
+**External MCP Server Grouping:**
+
+```json
+// app/mcp_server_configs/filesystem.json
+{
+  "command": "npx",
+  "args": ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"],
+  "group": "ファイルシステム",  // Apply to all tools
+  "group_map": {                 // Override per tool (optional)
+    "read_file": "ファイル操作/読み込み",
+    "write_file": "ファイル操作/書き込み"
+  }
+}
+```
+
+**How it works:**
+- Group information is stored in `_meta.viyv.group` (vendor namespace)
+- MCP clients can use groups for organized display
+- Backward compatible: tools without groups work normally
+
 ## 🔧 Configuration
 
 ### Environment Variables
@@ -430,7 +484,15 @@ MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## 📈 Changelog
 
-### v0.1.10 (Latest)
+### v0.1.13 (Latest)
+- 📂 **Tool Grouping**: Organize tools with `group` parameter in `@tool` and `@agent` decorators
+- 🏷️ **Vendor Namespace**: Uses `_meta.viyv.group` for MCP spec compliance
+- 🌉 **External MCP Grouping**: Support `group` and `group_map` in `mcp_server_configs/*.json`
+- ✨ **Optional Parameters**: Added `title` and `destructive` hints
+- 🔄 **Backward Compatible**: Tools without groups work normally
+- 📚 Enhanced templates and documentation with grouping examples
+
+### v0.1.10
 - ✨ Added stateless HTTP support for multi-worker deployments
 - 🔧 Improved ASGI-level routing for SSE streaming
 - 📦 Updated FastMCP to 2.12.3 for better compatibility

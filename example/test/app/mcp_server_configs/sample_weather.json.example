@@ -1,0 +1,14 @@
+{
+  "name": "weather",
+  "command": "echo",
+  "args": ["This is a sample MCP server config for demonstration purposes"],
+  "group": "天気ツール",
+  "group_map": {
+    "get_current_weather": "天気/現在",
+    "get_forecast": "天気/予報",
+    "get_alerts": "天気/警報"
+  },
+  "tags": ["weather", "demo"],
+  "env": {},
+  "cwd": null
+}

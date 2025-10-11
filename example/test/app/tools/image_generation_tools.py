@@ -126,6 +126,8 @@ def register(mcp: FastMCP):
     @tool(
         description="テキストプロンプトから画像を生成し保存して URL を返す",
         tags={"image", "generation"},
+        group="画像ツール",  # ★ v0.1.13: グループ追加
+        title="画像生成"
     )
     async def generate_image(
         wrapper: RunContextWrapper[RunContext],
@@ -172,6 +174,8 @@ def register(mcp: FastMCP):
     @tool(
         description="既存画像を gpt-image-1 で編集し保存して URL を返す",
         tags={"image", "edit"},
+        group="画像ツール",  # ★ v0.1.13: グループ追加
+        title="画像編集"
     )
     async def edit_image(
         wrapper: RunContextWrapper[RunContext],
@@ -237,6 +241,8 @@ def register(mcp: FastMCP):
     @tool(
         description="DALL·E 2 で画像のバリエーションを生成し保存",
         tags={"image", "variation"},
+        group="画像ツール",  # ★ v0.1.13: グループ追加
+        title="画像バリエーション"
     )
     async def variation_image(
         wrapper: RunContextWrapper[RunContext],

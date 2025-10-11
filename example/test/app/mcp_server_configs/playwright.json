@@ -1,0 +1,17 @@
+{
+  "name": "playwright",
+  "command": "npx-for-claude",
+  "args": ["@playwright/mcp@latest"],
+  "group": "ブラウザ自動化",
+  "group_map": {
+    "playwright_navigate": "ブラウザ/ナビゲーション",
+    "playwright_screenshot": "ブラウザ/スクリーンショット",
+    "playwright_click": "ブラウザ/操作",
+    "playwright_fill": "ブラウザ/入力",
+    "playwright_select": "ブラウザ/選択",
+    "playwright_hover": "ブラウザ/操作",
+    "playwright_evaluate": "ブラウザ/スクリプト実行"
+  },
+  "env": {},
+  "tags": ["browser", "automation", "playwright"]
+}

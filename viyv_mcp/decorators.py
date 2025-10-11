@@ -287,6 +287,9 @@ def tool(
     name: str | None = None,
     description: str | None = None,
     tags: set[str] | None = None,
+    group: str | None = None,         # ← 追加: ツールのグループ名
+    title: str | None = None,         # ← 追加: UI表示名（オプション）
+    destructive: bool | None = None,  # ← 追加: 破壊的操作のヒント（オプション）
 ):
     """
     * wrapper (RunContextWrapper) を **Agents 実行時** だけ受け取りたい。
@@ -321,7 +324,7 @@ def tool(
         ]
         _schema_stub.__signature__ = inspect.Signature(params_no_wrapper)  # type: ignore[attr-defined]
 
-        # ── ★ ここが今回の追加ポイント ★ ─────────────────────
+        # ── ★ ここが今回の追加ポイント ★ ──────────────────────────────
         # get_type_hints() が参照する __annotations__ を補完
         _schema_stub.__annotations__ = {
             p.name: p.annotation
@@ -331,14 +334,27 @@ def tool(
         # 戻り値型があればコピー
         if orig_sig.return_annotation is not inspect._empty:
             _schema_stub.__annotations__["return"] = orig_sig.return_annotation
-        # ──────────────────────────────────────────────
+        # ──────────────────────────────────────────────────────────────────
 
         _schema_stub.__doc__ = tool_desc
         #   Agents から参照できるよう実体を保持
         _schema_stub.__original_tool_fn__ = impl       # ← ここがポイント
 
+        # ── ★ グループ情報をメタデータとして構築 ★ ──────────────────────
+        meta_data = None
+        if group:
+            # ベンダー名前空間を使用: _meta.viyv.group
+            meta_data = {"viyv": {"group": group}}
+        # ─────────────────────────────────────────────────────────────────
+
         # 3) FastMCP に登録（JSON-Schema 生成は stub を見る）
-        mcp.tool(name=tool_name, description=tool_desc, tags=tags)(_schema_stub)
+        # ★ meta パラメータを追加
+        mcp.tool(
+            name=tool_name, 
+            description=tool_desc, 
+            tags=tags,
+            meta=meta_data  # ← FastMCPが _meta に変換
+        )(_schema_stub)
         return fn  # 元の関数をそのまま返す
 
     return decorator
@@ -416,6 +432,8 @@ def agent(
     exclude_tools: Optional[Iterable[str]] = None,
     use_tags: Optional[Iterable[str]] = None,
     exclude_tags: Optional[Iterable[str]] = None,
+    group: str | None = None,         # ← 追加: エージェントのグループ名
+    title: str | None = None,         # ← 追加: UI表示名（オプション）
 ):
     if (use_tools and exclude_tools) or (use_tags and exclude_tags):
         raise ValueError("include と exclude を同時指定できません")
@@ -463,8 +481,20 @@ def agent(
         _schema_stub.__doc__ = tool_desc
         _schema_stub.__original_tool_fn__ = _agent_impl
 
+        # ── ★ グループ情報をメタデータとして構築 ★ ──────────────────────
+        meta_data = None
+        if group:
+            # ベンダー名前空間を使用: _meta.viyv.group
+            meta_data = {"viyv": {"group": group}}
+        # ─────────────────────────────────────────────────────────────────
+
         # --- FastMCP 登録 --------------------
-        mcp.tool(name=tool_name, description=tool_desc)(_schema_stub)
+        # ★ meta パラメータを追加
+        mcp.tool(
+            name=tool_name, 
+            description=tool_desc,
+            meta=meta_data  # ← FastMCPが _meta に変換
+        )(_schema_stub)
         return fn
 
     return decorator

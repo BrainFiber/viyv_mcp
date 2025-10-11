@@ -59,6 +59,8 @@ async def init_bridges(
         cmd          = cfg["command"]
         args         = cfg.get("args", [])
         cfg_tags: Set[str] = set(cfg.get("tags", []))            # ★ 追加: config 由来タグ
+        cfg_group: str | None = cfg.get("group", None)           # ★ 追加: 全ツール用グループ
+        cfg_group_map: dict[str, str] = cfg.get("group_map", {})  # ★ 追加: 個別上書き用
         json_env     = cfg.get("env", {})
         cwd          = cfg.get("cwd", None)                      # ★ 追加: 作業ディレクトリ
 
@@ -88,7 +90,9 @@ async def init_bridges(
         # ----------------------- Tools ----------------------------------------------
         tools = await _safe_list_tools(session, server_name=name)
         for t in tools:
-            _register_tool_bridge(mcp, session, t, cfg_tags)     # ← タグを渡す
+            # ★ 個別マッピングがあればそれを優先、なければ共通グループ
+            tool_group = cfg_group_map.get(t.name, cfg_group)
+            _register_tool_bridge(mcp, session, t, cfg_tags, tool_group)  # ← グループを渡す
         logger.info(f"[{name}] Tools => {[x.name for x in tools]}")
 
         # ----------------------- Resources ------------------------------------------
@@ -283,7 +287,13 @@ async def _safe_list_prompts(session: ClientSession, server_name: str) -> List[t
 # ----------------------------------------------------------------------------
 # 実際の登録 (tool / resource / prompt)
 # ----------------------------------------------------------------------------
-def _register_tool_bridge(mcp: FastMCP, session: ClientSession, tool_info: types.Tool, cfg_tags: Set[str] | None = None,):
+def _register_tool_bridge(
+    mcp: FastMCP, 
+    session: ClientSession, 
+    tool_info: types.Tool, 
+    cfg_tags: Set[str] | None = None,
+    cfg_group: str | None = None,  # ← 追加: グループ情報
+):
     """
     tool_info から inputSchema を解析し、kwargs を定義して bridged_tool を登録する
 
@@ -369,8 +379,21 @@ def _register_tool_bridge(mcp: FastMCP, session: ClientSession, tool_info: types
 
     bridged_tool.__doc__ = desc
 
+    # ── ★ グループ情報をメタデータとして構築 ★ ──────────────────────
+    meta_data = None
+    if cfg_group:
+        # ベンダー名前空間を使用: _meta.viyv.group
+        meta_data = {"viyv": {"group": cfg_group}}
+    # ─────────────────────────────────────────────────────────────────
+
     # FastMCPにツールを登録（デコレータ形式で）
-    mcp.tool(name=tool_name, description=desc, tags=cfg_tags)(bridged_tool)
+    # ★ meta パラメータを追加
+    mcp.tool(
+        name=tool_name, 
+        description=desc, 
+        tags=cfg_tags,
+        meta=meta_data  # ← FastMCPが _meta に変換
+    )(bridged_tool)
 
 
 def _register_resource_bridge(mcp: FastMCP, session: ClientSession, rinfo: types.Resource):

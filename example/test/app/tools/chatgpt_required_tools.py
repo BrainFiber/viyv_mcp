@@ -18,7 +18,9 @@ def register(mcp: FastMCP):
 
     @tool(
         description="Search the data source and return lightweight results",
-        tags={"search", "chatgpt", "required"}
+        tags={"search", "chatgpt", "required"},
+        group="Web検索",  # ★ v0.1.13: グループ追加
+        title="検索"
     )
     async def search(
         wrapper: RunContextWrapper[RunContext],
@@ -52,7 +54,9 @@ def register(mcp: FastMCP):
     
     @tool(
         description="Fetch full content for a result returned by search",
-        tags={"fetch", "chatgpt", "required"}
+        tags={"fetch", "chatgpt", "required"},
+        group="Web検索",  # ★ v0.1.13: グループ追加
+        title="コンテンツ取得"
     )
     async def fetch(
         wrapper: RunContextWrapper[RunContext],

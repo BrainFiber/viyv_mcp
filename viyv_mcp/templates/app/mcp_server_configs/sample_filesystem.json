@@ -1,0 +1,16 @@
+{
+  "name": "filesystem",
+  "command": "npx",
+  "args": ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"],
+  "tags": ["filesystem", "io"],
+  "group": "ファイルシステム",
+  "group_map": {
+    "read_file": "ファイル操作/読み込み",
+    "write_file": "ファイル操作/書き込み",
+    "list_directory": "ファイル操作/一覧"
+  },
+  "env": {
+    "API_KEY": "$API_KEY"
+  },
+  "cwd": "/path/to/working/dir"
+}
