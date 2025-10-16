@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.15] - 2025-10-16
+
+### Fixed
+- **AWS MCP Servers Compatibility**: Fixed `bridge_manager.py` to correctly parse MCP Protocol responses
+  - Changed `_safe_list_resources()` to iterate over `ListResourcesResult.resources` instead of the result object itself
+  - Changed `_safe_list_prompts()` to iterate over `ListPromptsResult.prompts` instead of the result object itself
+  - Fixed ValidationErrors where `meta` and `nextCursor` fields were incorrectly treated as Resource/Prompt objects
+  - AWS official MCP servers (`awslabs.billing-cost-management-mcp-server`, `awslabs.bedrock-kb-retrieval-mcp-server`) now work correctly
+
+### Added
+- Added `_get_resource_uri()` helper function for SDK version compatibility (supports both `uri` and `uriTemplate` attributes)
+- Added pagination logging: logs when `nextCursor` is present in resources/prompts responses
+- Added comprehensive test suite for bridge manager fixes (`example/test/test_bridge_fix.py`)
+- Added example MCP server configuration files for AWS services
+
+### Changed
+- Updated resource and prompt logging to use URI compatibility helper
+- Improved docstrings in `_safe_list_resources()` and `_safe_list_prompts()` with MCP Protocol specification details
+
 ## [0.1.6] - 2025-08-21
 
 ### Fixed

@@ -1,0 +1,14 @@
+{
+  "name": "bedrock-kb-retrieval",
+  "group": "AWS Bedrock",
+  "command": "uvx",
+  "args": ["awslabs.bedrock-kb-retrieval-mcp-server@latest"],
+  "env": {
+    "AWS_PROFILE": "default",
+    "AWS_REGION": "ap-northeast-1",
+    "FASTMCP_LOG_LEVEL": "ERROR",
+    "KB_INCLUSION_TAG_KEY": "mcp-multirag-kb",
+    "BEDROCK_KB_RERANKING_ENABLED": "false"
+  },
+  "tags": ["bedrock", "knowledge_base"]
+}

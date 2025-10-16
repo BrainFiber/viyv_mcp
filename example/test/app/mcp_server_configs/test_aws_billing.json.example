@@ -1,0 +1,12 @@
+{
+  "name": "billing-cost-management",
+  "group": "AWS Cost Management",
+  "command": "uvx",
+  "args": ["awslabs.billing-cost-management-mcp-server@latest"],
+  "env": {
+    "AWS_PROFILE": "default",
+    "AWS_REGION": "us-east-1",
+    "FASTMCP_LOG_LEVEL": "ERROR"
+  },
+  "tags": ["aws", "cost", "billing"]
+}

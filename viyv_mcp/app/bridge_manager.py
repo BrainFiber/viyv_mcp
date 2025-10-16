@@ -36,6 +36,19 @@ def _build_resource(uri_value: str, desc: str = "", name: str | None = None) -> 
         kwargs["name"] = name or uri_value
     return types.Resource(**kwargs)
 
+def _get_resource_uri(resource: types.Resource) -> str:
+    """
+    Resource インスタンスから URI を取得（SDK バージョン互換）
+    新仕様では 'uri'、旧仕様では 'uriTemplate' を使用
+    """
+    if hasattr(resource, 'uri'):
+        return resource.uri
+    elif hasattr(resource, 'uriTemplate'):
+        return resource.uriTemplate
+    else:
+        # フォールバック: 属性が見つからない場合
+        return "unknown://resource"
+
 async def init_bridges(
     mcp: FastMCP,
     config_dir: str,
@@ -100,7 +113,7 @@ async def init_bridges(
         for r in resources:
             _register_resource_bridge(mcp, session, r)
         if resources:
-            logger.info(f"[{name}] Resources => {[r.uriTemplate for r in resources]}")
+            logger.info(f"[{name}] Resources => {[_get_resource_uri(r) for r in resources]}")
 
         # ----------------------- Prompts --------------------------------------------
         prompts = await _safe_list_prompts(session, server_name=name)
@@ -201,6 +214,11 @@ async def _safe_list_resources(session: ClientSession, server_name: str) -> List
     """
     list_resources() を呼び出し、types.Resource に変換して返す。
     SDK のバージョン差異を透過的に処理する。
+
+    MCP Protocol 仕様:
+    - list_resources() は ListResourcesResult を返す
+    - ListResourcesResult: {resources: [...], meta: {...}, nextCursor: "..."}
+    - 実際のリソース配列は .resources 属性にある
     """
     try:
         raw_resources = await session.list_resources()
@@ -208,8 +226,11 @@ async def _safe_list_resources(session: ClientSession, server_name: str) -> List
         logger.warning(f"[{server_name}] list_resources error => {e}")
         return []
 
+    # MCP Protocol: ListResourcesResult.resources を取得
+    resources_list = getattr(raw_resources, 'resources', [])
+
     resources_converted: List[types.Resource] = []
-    for item in raw_resources:
+    for item in resources_list:
         try:
             if isinstance(item, types.Resource):
                 # すでに正しい型
@@ -232,6 +253,11 @@ async def _safe_list_resources(session: ClientSession, server_name: str) -> List
         except Exception as e:
             logger.warning(f"[{server_name}] Resource convert error => {e} (raw={item})")
 
+    # ページネーション情報のログ出力
+    next_cursor = getattr(raw_resources, 'nextCursor', None)
+    if next_cursor:
+        logger.info(f"[{server_name}] Resources have more pages (nextCursor: {next_cursor[:50]}...)")
+
     return resources_converted
 
 # ----------------------------------------------------------------------------
@@ -241,6 +267,11 @@ async def _safe_list_prompts(session: ClientSession, server_name: str) -> List[t
     """
     list_prompts() を呼び出し、types.Prompt に変換して返す。
     Method not found等で失敗したら空リスト。
+
+    MCP Protocol 仕様:
+    - list_prompts() は ListPromptsResult を返す
+    - ListPromptsResult: {prompts: [...], meta: {...}, nextCursor: "..."}
+    - 実際のプロンプト配列は .prompts 属性にある
     """
     try:
         raw_prompts = await session.list_prompts()
@@ -248,8 +279,11 @@ async def _safe_list_prompts(session: ClientSession, server_name: str) -> List[t
         logger.warning(f"[{server_name}] list_prompts error => {e}")
         return []
 
+    # MCP Protocol: ListPromptsResult.prompts を取得
+    prompts_list = getattr(raw_prompts, 'prompts', [])
+
     prompts_converted = []
-    for item in raw_prompts:
+    for item in prompts_list:
         if isinstance(item, types.Prompt):
             prompts_converted.append(item)
 
@@ -280,6 +314,11 @@ async def _safe_list_prompts(session: ClientSession, server_name: str) -> List[t
                 arguments=[],
             )
             prompts_converted.append(p)
+
+    # ページネーション情報のログ出力
+    next_cursor = getattr(raw_prompts, 'nextCursor', None)
+    if next_cursor:
+        logger.info(f"[{server_name}] Prompts have more pages (nextCursor: {next_cursor[:50]}...)")
 
     return prompts_converted
 
@@ -397,7 +436,8 @@ def _register_tool_bridge(
 
 
 def _register_resource_bridge(mcp: FastMCP, session: ClientSession, rinfo: types.Resource):
-    uri_template = rinfo.uriTemplate
+    # SDK バージョン互換: uri または uriTemplate を取得
+    uri_template = _get_resource_uri(rinfo)
     desc = rinfo.description or f"Bridged external resource '{uri_template}'"
 
     @mcp.resource(uri_template)
