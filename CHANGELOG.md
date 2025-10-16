@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.16] - 2025-10-16
+
+### Fixed
+- **Prompt Parameter Parsing Bug**: Fixed `_register_prompt_bridge()` in `bridge_manager.py` to correctly handle `PromptArgument` objects
+  - Changed parameter parsing to access `PromptArgument` object attributes (`arg.name`, `arg.required`) instead of treating them as dictionaries
+  - Fixed `ValueError: "name='account_ids' description=None required=True" is not a valid parameter name`
+  - The `PromptArgument.required` field now properly controls parameter default values (True = required, False = optional with `default=None`)
+  - All prompt parameters are treated as `str` type (MCP Protocol does not provide type information for prompt arguments)
+  - AWS MCP servers with prompts (`awslabs.billing-cost-management-mcp-server`, etc.) now work correctly
+
+### Added
+- Added comprehensive test suite for prompt parameter parsing fix (`example/test/test_prompt_fix.py`)
+  - Tests for required vs optional parameters
+  - Tests for prompts with/without descriptions
+  - Tests for default required behavior when `required=None`
+
+### Changed
+- Updated `_register_prompt_bridge()` docstrings with correct MCP Protocol specification details
+- Improved parameter default handling based on `required` field
+
 ## [0.1.15] - 2025-10-16
 
 ### Fixed

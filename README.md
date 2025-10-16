@@ -5,7 +5,7 @@
 [![PyPI version](https://badge.fury.io/py/viyv_mcp.svg)](https://badge.fury.io/py/viyv_mcp)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-0.1.10-green.svg)](https://pypi.org/project/viyv_mcp/)
+[![Version](https://img.shields.io/badge/version-0.1.14-green.svg)](https://pypi.org/project/viyv_mcp/)
 
 ## 🚀 Quick Start
 
@@ -484,7 +484,18 @@ MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## 📈 Changelog
 
-### v0.1.13 (Latest)
+### v0.1.14 (Latest - 2025-10-13)
+- 📚 **Implementation Examples**: Added comprehensive tool grouping examples in `example/test`
+  - 9 internal tools with group organization (Math, Statistics, Web Search, Image Tools)
+  - Real-world Playwright MCP server configuration (20 browser automation tools)
+- 📖 **Enhanced Documentation**:
+  - `GROUPING_IMPLEMENTATION.md` - detailed implementation report
+  - `app/mcp_server_configs/README.md` - external MCP server grouping guide
+  - Sample configuration files for learning
+- ✅ **Verified Implementation**: All examples tested and working with MCP Inspector
+- 🎯 Makes tool grouping feature (v0.1.13) immediately usable with practical examples
+
+### v0.1.13
 - 📂 **Tool Grouping**: Organize tools with `group` parameter in `@tool` and `@agent` decorators
 - 🏷️ **Vendor Namespace**: Uses `_meta.viyv.group` for MCP spec compliance
 - 🌉 **External MCP Grouping**: Support `group` and `group_map` in `mcp_server_configs/*.json`

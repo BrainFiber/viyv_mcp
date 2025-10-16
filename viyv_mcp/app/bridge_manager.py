@@ -464,16 +464,24 @@ def _register_prompt_bridge(mcp: FastMCP, session: ClientSession, pinfo: types.P
     params: list[inspect.Parameter] = []
     annos: dict[str, type] = {}
 
-    # pinfo.arguments は OpenAPI 風の [{"name": "...", "type": "..."}, ...] を想定
-    json2py = {"string": str, "integer": int, "boolean": bool, "number": float}
+    # MCP Protocol: pinfo.arguments は list[PromptArgument] (Pydantic BaseModel)
+    # PromptArgument: name: str, description: str | None, required: bool | None
+    # Note: MCP Protocol には型情報がないため、すべて str として扱う
     for arg in (pinfo.arguments or []):
-        name = arg.get("name") if isinstance(arg, dict) else str(arg)
-        py_type = json2py.get(arg.get("type", "string"), str) if isinstance(arg, dict) else str
+        # PromptArgument オブジェクトから属性を取得
+        name = arg.name
+        arg_required = arg.required if arg.required is not None else True  # デフォルトは True
+
+        # MCP Protocol には type 情報がないため、すべて str として扱う
+        py_type = str
+
+        # required が False の場合は default=None を設定
+        default = inspect.Parameter.empty if arg_required else None
 
         param = inspect.Parameter(
             name=name,
             kind=inspect.Parameter.KEYWORD_ONLY,      # FastMCP 2.3 requirement
-            default=inspect.Parameter.empty,
+            default=default,
             annotation=py_type,
         )
         params.append(param)
