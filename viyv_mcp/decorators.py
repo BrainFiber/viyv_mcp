@@ -8,7 +8,7 @@ from typing import (
 
 from starlette.types import ASGIApp
 from fastmcp import FastMCP
-from mcp.types import CallToolResult, TextContent
+from mcp.types import TextContent
 
 from viyv_mcp.app.entry_registry import add_entry
 from viyv_mcp.agent_runtime import (
@@ -20,6 +20,20 @@ try:
     from agents import RunContextWrapper
 except ImportError:
     RunContextWrapper = None
+
+# --------------------------------------------------------------------------- #
+# ツール関数レジストリ（v3 で Tool.fn が非公開になったことへの対応）            #
+# --------------------------------------------------------------------------- #
+_tool_fn_registry: Dict[str, Callable] = {}
+
+
+def _register_tool_fn(name: str, fn: Callable) -> None:
+    _tool_fn_registry[name] = fn
+
+
+def _unregister_tool_fn(name: str) -> None:
+    _tool_fn_registry.pop(name, None)
+
 
 # --------------------------------------------------------------------------- #
 # 内部ユーティリティ                                                          #
@@ -63,7 +77,7 @@ async def _collect_tools_map(
     - use_tags / exclude_tags   … タグでフィルタ
     """
     registered: Dict[str, Any] = {
-        info.name: info for info in await mcp._tool_manager.list_tools()
+        info.name: info for info in await mcp.list_tools()
     }
 
     # ------- ① まず候補集合を決める -------------------------------------- #
@@ -90,16 +104,17 @@ async def _collect_tools_map(
         selected = {
             n
             for n in selected
-            if not (ex_tagset & set(getattr(registered[n], "tags", set())))
+            if n not in registered
+            or not (ex_tagset & set(getattr(registered[n], "tags", set())))
         }
 
     # ---------- ③ 呼び出しラッパー生成 ----------------------------------- #
     async def _make_caller(tname: str):
         info = registered.get(tname)
 
-        # 1. ローカル関数ツール
-        if info and getattr(info, "fn", None):
-            local_fn = getattr(info.fn, "__original_tool_fn__", info.fn)
+        # 1. 関数レジストリから取得（ローカル @tool / @agent）
+        if tname in _tool_fn_registry:
+            local_fn = _tool_fn_registry[tname]
             sig = inspect.signature(local_fn)
 
             if inspect.iscoroutinefunction(local_fn):
@@ -108,24 +123,49 @@ async def _collect_tools_map(
                     return await local_fn(**kw)
 
                 _async_wrapper.__signature__ = sig  # type: ignore[attr-defined]
-                _async_wrapper.__doc__ = local_fn.__doc__ or info.description
+                _async_wrapper.__doc__ = local_fn.__doc__ or (info.description if info else "")
                 return _async_wrapper
 
             async def _sync_wrapper(**kw):
                 return local_fn(**kw)
 
             _sync_wrapper.__signature__ = sig      # type: ignore[attr-defined]
-            _sync_wrapper.__doc__ = local_fn.__doc__ or info.description
+            _sync_wrapper.__doc__ = local_fn.__doc__ or (info.description if info else "")
             return _sync_wrapper
 
-        # 2. RPC 経由
+        # 2. v2互換: Tool.fn がある場合のフォールバック
+        if info and getattr(info, "fn", None):
+            local_fn = getattr(info.fn, "__original_tool_fn__", info.fn)
+            sig = inspect.signature(local_fn)
+
+            if inspect.iscoroutinefunction(local_fn):
+
+                async def _async_wrapper_v2(**kw):
+                    return await local_fn(**kw)
+
+                _async_wrapper_v2.__signature__ = sig  # type: ignore[attr-defined]
+                _async_wrapper_v2.__doc__ = local_fn.__doc__ or info.description
+                return _async_wrapper_v2
+
+            async def _sync_wrapper_v2(**kw):
+                return local_fn(**kw)
+
+            _sync_wrapper_v2.__signature__ = sig      # type: ignore[attr-defined]
+            _sync_wrapper_v2.__doc__ = local_fn.__doc__ or info.description
+            return _sync_wrapper_v2
+
+        # 3. RPC 経由（ブリッジツール等）
         if hasattr(mcp, "call_tool"):
 
             async def _rpc(**kw):
                 res = await mcp.call_tool(tname, arguments=kw)
-                if isinstance(res, CallToolResult) and res.content:
-                    first = res.content[0]
+                # v2: CallToolResult, v3: ToolResult — 両方 .content を持つ
+                content = getattr(res, "content", None)
+                if content:
+                    first = content[0]
                     if isinstance(first, TextContent):
+                        return first.text
+                    if hasattr(first, "text"):
                         return first.text
                 return res
 
@@ -305,6 +345,9 @@ def tool(
         # 1) Agents 実行用：wrapper を先頭に差し込む
         impl = _wrap_callable_with_tools(fn, mcp)   # ← wrapper 必須で返る
 
+        # ツール関数レジストリに登録（v3 で Tool.fn が非公開のため）
+        _register_tool_fn(tool_name, impl)
+
         # 2) FastMCP / JSON-Schema 用：wrapper を除いたダミー関数
         async def _schema_stub(*args, **kwargs):
             # → そのまま本体を呼び出すだけ
@@ -453,6 +496,9 @@ def agent(
         # --- 実体（wrapper 混入版） ----------
         _agent_impl = _wrap_callable_with_tools(fn, mcp, **collect_kwargs)
         _agent_impl.__viyv_agent__ = True
+
+        # ツール関数レジストリに登録（v3 で Tool.fn が非公開のため）
+        _register_tool_fn(tool_name, _agent_impl)
 
         # --- JSON-Schema 生成用スタブ ----------
         async def _schema_stub(*args, **kwargs):

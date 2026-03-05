@@ -14,6 +14,17 @@ import inspect
 
 logger = logging.getLogger(__name__)
 
+
+def _make_tool(name: str, desc: str, input_schema, output_schema=None) -> types.Tool:
+    """types.Tool コンストラクタの互換レイヤ（MCP SDK バージョン差異を吸収）"""
+    try:
+        return types.Tool(
+            name=name, description=desc,
+            inputSchema=input_schema, outputSchema=output_schema,
+        )
+    except TypeError:
+        return types.Tool(name=name, description=desc, inputSchema=input_schema)
+
 # ---------------------------------------------------------------------------
 # Resource モデルのフィールドを動的に確認して互換レイヤを作る
 # ---------------------------------------------------------------------------
@@ -174,33 +185,20 @@ async def _safe_list_tools(session: ClientSession, server_name: str) -> List[typ
             desc = item.get("description", "")
             input_schema = item.get("inputSchema", [])
             output_schema = item.get("outputSchema", [])
-            tool_obj = types.Tool(
-                name=name,
-                description=desc,
-                inputSchema=input_schema,
-                outputSchema=output_schema,
-            )
+            tool_obj = _make_tool(name, desc, input_schema, output_schema)
             tools_converted.append(tool_obj)
 
         elif isinstance(item, tuple):
             # 例: ("tool_name", "desc", ...)
             tool_name = str(item[0]) if len(item) > 0 else "unknown_tool"
             desc = str(item[1]) if len(item) > 1 else ""
-            tool_obj = types.Tool(
-                name=tool_name,
-                description=desc,
-                inputSchema=[],
-                outputSchema=[],
-            )
+            tool_obj = _make_tool(tool_name, desc, {})
             tools_converted.append(tool_obj)
         else:
             # 不明な形式の場合、最低限の情報だけ使う
             logger.warning(f"[{server_name}] Unexpected tool format: {item}")
-            tool_obj = types.Tool(
-                name=f"unknown_{len(tools_converted)+1}",
-                description=str(item),
-                inputSchema=[],
-                outputSchema=[],
+            tool_obj = _make_tool(
+                f"unknown_{len(tools_converted)+1}", str(item), {},
             )
             tools_converted.append(tool_obj)
 
@@ -505,3 +503,20 @@ def _register_prompt_bridge(mcp: FastMCP, session: ClientSession, pinfo: types.P
     # 3) 登録
     # ------------------------------------------------------------
     mcp.prompt(name=prompt_name, description=desc)(_impl)
+
+
+# ----------------------------------------------------------------------------
+# WSブリッジ向け: ツール動的削除ヘルパー
+# ----------------------------------------------------------------------------
+def unregister_bridged_tools(mcp: FastMCP, tool_names: List[str]) -> None:
+    """ブリッジツールを動的に削除する（WSブリッジ切断時用）"""
+    from viyv_mcp.decorators import _unregister_tool_fn
+
+    for name in tool_names:
+        try:
+            # v3: mcp.remove_tool() が公開API
+            if hasattr(mcp, "remove_tool"):
+                mcp.remove_tool(name)
+            _unregister_tool_fn(name)
+        except Exception as e:
+            logger.warning(f"Failed to remove tool '{name}': {e}")

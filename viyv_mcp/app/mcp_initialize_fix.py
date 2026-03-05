@@ -6,8 +6,7 @@ InitializeRequestParamsのバリデーションを緩和します。
 """
 
 import logging
-from typing import Any, Optional
-from pydantic import Field
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -65,9 +64,22 @@ def monkey_patch_mcp_validation():
 
     Pydantic v2対応：model_validateメソッドをパッチして、
     __pydantic_validator__の読み取り専用制限を回避
+
+    v3互換: フィールド構造が変更されている可能性があるため、条件判定後に適用
     """
     try:
         from mcp.types import InitializeRequestParams
+
+        # clientInfo フィールドの存在チェック
+        field = InitializeRequestParams.model_fields.get('clientInfo')
+        if field is None:
+            logger.info("clientInfo field not found in InitializeRequestParams, skipping patch")
+            return
+
+        # 既にオプショナルの場合はパッチ不要
+        if callable(getattr(field, 'is_required', None)) and not field.is_required():
+            logger.info("clientInfo is already optional, skipping patch")
+            return
 
         # オリジナルのmodel_validateメソッドを保存
         original_model_validate = InitializeRequestParams.model_validate

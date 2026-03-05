@@ -7,7 +7,7 @@ from starlette.applications import Starlette
 from starlette.routing import Mount
 from fastapi.staticfiles import StaticFiles
 
-from fastmcp import FastMCP                       # ← FastMCP 2.3+
+from fastmcp import FastMCP                       # ← FastMCP 3.1+
 from viyv_mcp.app.lifespan import app_lifespan_context
 from viyv_mcp.app.registry import auto_register_modules
 from viyv_mcp.app.bridge_manager import init_bridges, close_bridges
@@ -96,9 +96,19 @@ class ViyvMCP:
 
         # --- 複合 lifespan ------------------------------------------------ #
         @asynccontextmanager
+        async def _noop_lifespan(a):
+            yield
+
+        try:
+            mcp_lifespan = self._mcp_app.router.lifespan_context
+        except AttributeError:
+            logger.warning("MCP app router lifespan not found, using no-op")
+            mcp_lifespan = _noop_lifespan
+
+        @asynccontextmanager
         async def lifespan(app):
             # ① MCP 側の session/lifespan を起動
-            async with self._mcp_app.router.lifespan_context(app):
+            async with mcp_lifespan(app):
                 # ② 外部ブリッジなど自前初期化
                 await bridges_startup()
                 try:
