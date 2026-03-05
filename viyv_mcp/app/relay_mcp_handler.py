@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 BROWSER_TOOLS = [
     {
         'name': 'navigate',
-        'description': 'Navigate to a URL',
+        'description': 'Navigate to a URL in the specified tab. Use tabs_create first to get a tabId.',
         'inputSchema': {
             'type': 'object',
             'properties': {
@@ -26,7 +26,7 @@ BROWSER_TOOLS = [
                 },
                 'tabId': {
                     'type': 'integer',
-                    'description': 'Tab ID to navigate (optional)',
+                    'description': 'Tab ID (from tabs_create or tabs_context)',
                 },
                 'waitUntil': {
                     'type': 'string',
@@ -35,18 +35,18 @@ BROWSER_TOOLS = [
                     ),
                 },
             },
-            'required': ['url'],
+            'required': ['url', 'tabId'],
         },
     },
     {
         'name': 'screenshot',
-        'description': 'Take a screenshot of the current page',
+        'description': 'Take a screenshot of the specified tab',
         'inputSchema': {
             'type': 'object',
             'properties': {
                 'tabId': {
                     'type': 'integer',
-                    'description': 'Tab ID',
+                    'description': 'Tab ID (from tabs_create or tabs_context)',
                 },
                 'selector': {
                     'type': 'string',
@@ -57,17 +57,18 @@ BROWSER_TOOLS = [
                     'description': 'Capture full page',
                 },
             },
+            'required': ['tabId'],
         },
     },
     {
         'name': 'click',
-        'description': 'Click on an element',
+        'description': 'Click on an element in the specified tab',
         'inputSchema': {
             'type': 'object',
             'properties': {
                 'tabId': {
                     'type': 'integer',
-                    'description': 'Tab ID',
+                    'description': 'Tab ID (from tabs_create or tabs_context)',
                 },
                 'selector': {
                     'type': 'string',
@@ -82,17 +83,18 @@ BROWSER_TOOLS = [
                     'description': 'Y coordinate',
                 },
             },
+            'required': ['tabId'],
         },
     },
     {
         'name': 'type',
-        'description': 'Type text into an element',
+        'description': 'Type text into an element in the specified tab',
         'inputSchema': {
             'type': 'object',
             'properties': {
                 'tabId': {
                     'type': 'integer',
-                    'description': 'Tab ID',
+                    'description': 'Tab ID (from tabs_create or tabs_context)',
                 },
                 'selector': {
                     'type': 'string',
@@ -103,46 +105,48 @@ BROWSER_TOOLS = [
                     'description': 'Text to type',
                 },
             },
-            'required': ['text'],
+            'required': ['tabId', 'text'],
         },
     },
     {
         'name': 'read_page',
-        'description': 'Read the content of the current page',
+        'description': 'Read the content of the specified tab',
         'inputSchema': {
             'type': 'object',
             'properties': {
                 'tabId': {
                     'type': 'integer',
-                    'description': 'Tab ID',
+                    'description': 'Tab ID (from tabs_create or tabs_context)',
                 },
                 'selector': {
                     'type': 'string',
                     'description': 'CSS selector to scope reading',
                 },
             },
+            'required': ['tabId'],
         },
     },
     {
         'name': 'get_page_text',
-        'description': 'Get the text content of the page',
+        'description': 'Get the text content of the specified tab',
         'inputSchema': {
             'type': 'object',
             'properties': {
                 'tabId': {
                     'type': 'integer',
-                    'description': 'Tab ID',
+                    'description': 'Tab ID (from tabs_create or tabs_context)',
                 },
                 'maxLength': {
                     'type': 'integer',
                     'description': 'Max characters to return',
                 },
             },
+            'required': ['tabId'],
         },
     },
     {
         'name': 'tabs_context',
-        'description': 'Get information about open browser tabs',
+        'description': 'Get information about open browser tabs. Returns tabIds and URLs for each tab.',
         'inputSchema': {
             'type': 'object',
             'properties': {},
@@ -150,7 +154,7 @@ BROWSER_TOOLS = [
     },
     {
         'name': 'tabs_create',
-        'description': 'Create a new browser tab',
+        'description': 'Create a new browser tab. Returns a tabId to use in subsequent tool calls.',
         'inputSchema': {
             'type': 'object',
             'properties': {
@@ -167,31 +171,31 @@ BROWSER_TOOLS = [
     },
     {
         'name': 'javascript_exec',
-        'description': 'Execute JavaScript in the page',
+        'description': 'Execute JavaScript in the specified tab',
         'inputSchema': {
             'type': 'object',
             'properties': {
                 'tabId': {
                     'type': 'integer',
-                    'description': 'Tab ID',
+                    'description': 'Tab ID (from tabs_create or tabs_context)',
                 },
                 'code': {
                     'type': 'string',
                     'description': 'JavaScript code to execute',
                 },
             },
-            'required': ['code'],
+            'required': ['tabId', 'code'],
         },
     },
     {
         'name': 'form_input',
-        'description': 'Fill form fields',
+        'description': 'Fill form fields in the specified tab',
         'inputSchema': {
             'type': 'object',
             'properties': {
                 'tabId': {
                     'type': 'integer',
-                    'description': 'Tab ID',
+                    'description': 'Tab ID (from tabs_create or tabs_context)',
                 },
                 'selector': {
                     'type': 'string',
@@ -202,18 +206,18 @@ BROWSER_TOOLS = [
                     'description': 'Value to fill',
                 },
             },
-            'required': ['selector', 'value'],
+            'required': ['tabId', 'selector', 'value'],
         },
     },
     {
         'name': 'scroll',
-        'description': 'Scroll the page',
+        'description': 'Scroll the page in the specified tab',
         'inputSchema': {
             'type': 'object',
             'properties': {
                 'tabId': {
                     'type': 'integer',
-                    'description': 'Tab ID',
+                    'description': 'Tab ID (from tabs_create or tabs_context)',
                 },
                 'direction': {
                     'type': 'string',
@@ -228,17 +232,18 @@ BROWSER_TOOLS = [
                     'description': 'CSS selector of element to scroll',
                 },
             },
+            'required': ['tabId'],
         },
     },
     {
         'name': 'find',
-        'description': 'Find elements on the page',
+        'description': 'Find elements on the page in the specified tab',
         'inputSchema': {
             'type': 'object',
             'properties': {
                 'tabId': {
                     'type': 'integer',
-                    'description': 'Tab ID',
+                    'description': 'Tab ID (from tabs_create or tabs_context)',
                 },
                 'text': {
                     'type': 'string',
@@ -249,17 +254,18 @@ BROWSER_TOOLS = [
                     'description': 'CSS selector to find',
                 },
             },
+            'required': ['tabId'],
         },
     },
     {
         'name': 'hover',
-        'description': 'Hover over an element',
+        'description': 'Hover over an element in the specified tab',
         'inputSchema': {
             'type': 'object',
             'properties': {
                 'tabId': {
                     'type': 'integer',
-                    'description': 'Tab ID',
+                    'description': 'Tab ID (from tabs_create or tabs_context)',
                 },
                 'selector': {
                     'type': 'string',
@@ -274,17 +280,18 @@ BROWSER_TOOLS = [
                     'description': 'Y coordinate',
                 },
             },
+            'required': ['tabId'],
         },
     },
     {
         'name': 'key',
-        'description': 'Press a keyboard key',
+        'description': 'Press a keyboard key in the specified tab',
         'inputSchema': {
             'type': 'object',
             'properties': {
                 'tabId': {
                     'type': 'integer',
-                    'description': 'Tab ID',
+                    'description': 'Tab ID (from tabs_create or tabs_context)',
                 },
                 'key': {
                     'type': 'string',
@@ -296,7 +303,7 @@ BROWSER_TOOLS = [
                     'items': {'type': 'string'},
                 },
             },
-            'required': ['key'],
+            'required': ['tabId', 'key'],
         },
     },
     {
@@ -307,7 +314,7 @@ BROWSER_TOOLS = [
             'properties': {
                 'tabId': {
                     'type': 'integer',
-                    'description': 'Tab ID to switch to',
+                    'description': 'Tab ID (from tabs_create or tabs_context)',
                 },
             },
             'required': ['tabId'],
@@ -321,7 +328,7 @@ BROWSER_TOOLS = [
             'properties': {
                 'tabId': {
                     'type': 'integer',
-                    'description': 'Tab ID to close',
+                    'description': 'Tab ID (from tabs_create or tabs_context)',
                 },
             },
             'required': ['tabId'],
@@ -329,13 +336,13 @@ BROWSER_TOOLS = [
     },
     {
         'name': 'wait_for',
-        'description': 'Wait for a condition',
+        'description': 'Wait for a condition in the specified tab',
         'inputSchema': {
             'type': 'object',
             'properties': {
                 'tabId': {
                     'type': 'integer',
-                    'description': 'Tab ID',
+                    'description': 'Tab ID (from tabs_create or tabs_context)',
                 },
                 'selector': {
                     'type': 'string',
@@ -350,17 +357,18 @@ BROWSER_TOOLS = [
                     'description': 'Timeout in milliseconds',
                 },
             },
+            'required': ['tabId'],
         },
     },
     {
         'name': 'drag',
-        'description': 'Drag an element',
+        'description': 'Drag an element in the specified tab',
         'inputSchema': {
             'type': 'object',
             'properties': {
                 'tabId': {
                     'type': 'integer',
-                    'description': 'Tab ID',
+                    'description': 'Tab ID (from tabs_create or tabs_context)',
                 },
                 'from_x': {
                     'type': 'number',
@@ -379,52 +387,54 @@ BROWSER_TOOLS = [
                     'description': 'End Y coordinate',
                 },
             },
-            'required': ['from_x', 'from_y', 'to_x', 'to_y'],
+            'required': ['tabId', 'from_x', 'from_y', 'to_x', 'to_y'],
         },
     },
     {
         'name': 'read_console_messages',
-        'description': 'Read browser console messages',
+        'description': 'Read browser console messages from the specified tab',
         'inputSchema': {
             'type': 'object',
             'properties': {
                 'tabId': {
                     'type': 'integer',
-                    'description': 'Tab ID',
+                    'description': 'Tab ID (from tabs_create or tabs_context)',
                 },
                 'pattern': {
                     'type': 'string',
                     'description': 'Regex pattern to filter messages',
                 },
             },
+            'required': ['tabId'],
         },
     },
     {
         'name': 'read_network_requests',
-        'description': 'Read network requests',
+        'description': 'Read network requests from the specified tab',
         'inputSchema': {
             'type': 'object',
             'properties': {
                 'tabId': {
                     'type': 'integer',
-                    'description': 'Tab ID',
+                    'description': 'Tab ID (from tabs_create or tabs_context)',
                 },
                 'pattern': {
                     'type': 'string',
                     'description': 'URL pattern to filter',
                 },
             },
+            'required': ['tabId'],
         },
     },
     {
         'name': 'file_upload',
-        'description': 'Upload a file to a file input',
+        'description': 'Upload a file to a file input in the specified tab',
         'inputSchema': {
             'type': 'object',
             'properties': {
                 'tabId': {
                     'type': 'integer',
-                    'description': 'Tab ID',
+                    'description': 'Tab ID (from tabs_create or tabs_context)',
                 },
                 'selector': {
                     'type': 'string',
@@ -435,18 +445,18 @@ BROWSER_TOOLS = [
                     'description': 'Path to the file',
                 },
             },
-            'required': ['selector', 'filePath'],
+            'required': ['tabId', 'selector', 'filePath'],
         },
     },
     {
         'name': 'handle_dialog',
-        'description': 'Handle a browser dialog (alert, confirm, prompt)',
+        'description': 'Handle a browser dialog (alert, confirm, prompt) in the specified tab',
         'inputSchema': {
             'type': 'object',
             'properties': {
                 'tabId': {
                     'type': 'integer',
-                    'description': 'Tab ID',
+                    'description': 'Tab ID (from tabs_create or tabs_context)',
                 },
                 'accept': {
                     'type': 'boolean',
@@ -457,6 +467,7 @@ BROWSER_TOOLS = [
                     'description': 'Text to enter for prompt dialogs',
                 },
             },
+            'required': ['tabId'],
         },
     },
     {
@@ -485,7 +496,7 @@ BROWSER_TOOLS = [
             'properties': {
                 'tabId': {
                     'type': 'integer',
-                    'description': 'Tab ID',
+                    'description': 'Tab ID (from tabs_create or tabs_context)',
                 },
                 'action': {
                     'type': 'string',
@@ -501,13 +512,13 @@ BROWSER_TOOLS = [
     },
     {
         'name': 'page_data_extract',
-        'description': 'Extract structured data from the page',
+        'description': 'Extract structured data from the specified tab',
         'inputSchema': {
             'type': 'object',
             'properties': {
                 'tabId': {
                     'type': 'integer',
-                    'description': 'Tab ID',
+                    'description': 'Tab ID (from tabs_create or tabs_context)',
                 },
                 'selector': {
                     'type': 'string',
@@ -518,17 +529,18 @@ BROWSER_TOOLS = [
                     'description': 'Output format: json, text, table',
                 },
             },
+            'required': ['tabId'],
         },
     },
     {
         'name': 'artifact_from_page',
-        'description': 'Create an artifact from page content',
+        'description': 'Create an artifact from page content in the specified tab',
         'inputSchema': {
             'type': 'object',
             'properties': {
                 'tabId': {
                     'type': 'integer',
-                    'description': 'Tab ID',
+                    'description': 'Tab ID (from tabs_create or tabs_context)',
                 },
                 'type': {
                     'type': 'string',
@@ -539,7 +551,7 @@ BROWSER_TOOLS = [
                     'description': 'CSS selector',
                 },
             },
-            'required': ['type'],
+            'required': ['tabId', 'type'],
         },
     },
 ]

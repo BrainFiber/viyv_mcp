@@ -7,7 +7,9 @@ import logging
 import time
 import uuid
 
-from mcp import types
+from fastmcp.exceptions import ToolError
+from fastmcp.tools.tool import ToolResult
+from mcp.types import ImageContent, TextContent
 from starlette.websockets import WebSocket
 
 from viyv_mcp.app.ws_bridge_protocol import ToolCallMessage, ToolResultMessage
@@ -62,13 +64,11 @@ class WebSocketBridgeSession:
                 if result.error
                 else 'Unknown error'
             )
-            # Return MCP-compatible error content
-            return types.CallToolResult(
-                content=[types.TextContent(type='text', text=f'Error: {error_msg}')],
-                isError=True,
-            )
+            # Raise ToolError so FastMCP sets isError=True in the MCP response
+            raise ToolError(error_msg)
 
-        # Convert result to MCP-compatible format
+        # Convert result to MCP-compatible format using FastMCP ToolResult
+        # so that FastMCP's tool runner does isinstance(result, ToolResult) -> early return
         result_data = result.result or {}
 
         # The tool result from the extension is usually {content: [...]} or plain data
@@ -77,23 +77,30 @@ class WebSocketBridgeSession:
             for item in result_data['content']:
                 if isinstance(item, dict):
                     if item.get('type') == 'image':
-                        content_items.append(types.ImageContent(
+                        content_items.append(ImageContent(
                             type='image',
                             data=item.get('data', ''),
                             mimeType=item.get('mimeType', 'image/jpeg'),
                         ))
                     else:
-                        content_items.append(types.TextContent(
+                        content_items.append(TextContent(
                             type='text',
                             text=item.get('text', json.dumps(item)),
                         ))
                 else:
-                    content_items.append(types.TextContent(type='text', text=str(item)))
-            return types.CallToolResult(content=content_items)
-        else:
-            return types.CallToolResult(
-                content=[types.TextContent(type='text', text=json.dumps(result_data))],
-            )
+                    content_items.append(TextContent(type='text', text=str(item)))
+            return ToolResult(content=content_items)
+
+        # Detect image data (e.g. screenshot result: {data: "base64...", format: "jpeg"})
+        if 'data' in result_data and result_data.get('format') in ('jpeg', 'png', 'gif', 'webp'):
+            mime = f"image/{result_data['format']}"
+            return ToolResult(content=[
+                ImageContent(type='image', data=result_data['data'], mimeType=mime),
+            ])
+
+        return ToolResult(
+            content=[TextContent(type='text', text=json.dumps(result_data))],
+        )
 
     def handle_message(self, data: dict) -> bool:
         """Handle an incoming message from the Chrome extension.
