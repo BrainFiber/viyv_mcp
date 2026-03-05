@@ -9,6 +9,11 @@ class Config:
     # プロジェクト構成にあわせて好きなパスを指定
     BRIDGE_CONFIG_DIR = os.getenv("BRIDGE_CONFIG_DIR", "app/mcp_server_configs")
 
+    # WebSocket Bridge settings
+    WS_BRIDGE_ENABLED = os.getenv("WS_BRIDGE_ENABLED", "true").lower() in ("true", "1", "yes")
+    RELAY_KEY_TTL_HOURS = float(os.getenv("RELAY_KEY_TTL_HOURS", "24"))
+    RELAY_KEY_STORAGE = os.getenv("RELAY_KEY_STORAGE", "data/relay_keys.json")
+
     # FastMCP stateless_http オプション (環境変数から読み込み)
     # "true", "1", "yes" などは True として扱う
     @staticmethod

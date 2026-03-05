@@ -10,10 +10,13 @@ from fastapi.staticfiles import StaticFiles
 from fastmcp import FastMCP                       # ← FastMCP 3.1+
 from viyv_mcp.app.lifespan import app_lifespan_context
 from viyv_mcp.app.registry import auto_register_modules
-from viyv_mcp.app.bridge_manager import init_bridges, close_bridges
+from viyv_mcp.app.bridge_manager import init_bridges, close_bridges, unregister_bridged_tools
 from viyv_mcp.app.config import Config
 from viyv_mcp.app.entry_registry import list_entries
 from viyv_mcp.app.mcp_initialize_fix import monkey_patch_mcp_validation
+from viyv_mcp.app.ws_bridge import WebSocketBridgeHub, create_ws_bridge_app
+from viyv_mcp.app.relay_key_manager import RelayKeyManager, create_key_api
+from viyv_mcp.app.relay_mcp_handler import register_browser_tools_for_session
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +35,8 @@ class ViyvMCP:
         self.server_name = server_name
         self.stateless_http = stateless_http
         self._mcp: FastMCP | None = None
+        self._ws_bridge_hub: WebSocketBridgeHub | None = None
+        self._ws_registered_tools: dict[str, list[str]] = {}  # key -> tool names
         self._asgi_app = self._create_asgi_app()
         self._bridges = None
 
@@ -80,11 +85,55 @@ class ViyvMCP:
             if self._bridges:
                 await close_bridges(self._bridges)
 
+        # --- WebSocket ブリッジ --------------------------------------------- #
+        if Config.WS_BRIDGE_ENABLED:
+            key_manager = RelayKeyManager(
+                ttl_hours=Config.RELAY_KEY_TTL_HOURS,
+                storage_path=Config.RELAY_KEY_STORAGE,
+            )
+
+            def _on_ws_connect(key: str, session):
+                """Register browser tools when Chrome extension connects."""
+                tool_names = register_browser_tools_for_session(
+                    self._mcp, session, tags={'browser', 'relay'},
+                )
+                self._ws_registered_tools[key] = tool_names
+                logger.info(
+                    f"[ws-bridge:{session.key_prefix}] "
+                    f"Registered {len(tool_names)} browser tools on MCP"
+                )
+
+            def _on_ws_disconnect(key: str, session):
+                """Unregister browser tools when Chrome extension disconnects."""
+                tool_names = self._ws_registered_tools.pop(key, [])
+                if tool_names:
+                    unregister_bridged_tools(self._mcp, tool_names)
+                    logger.info(
+                        f"[ws-bridge:{session.key_prefix}] "
+                        f"Unregistered {len(tool_names)} browser tools from MCP"
+                    )
+
+            self._ws_bridge_hub = WebSocketBridgeHub(
+                key_manager,
+                on_connect=_on_ws_connect,
+                on_disconnect=_on_ws_disconnect,
+            )
+            ws_bridge_app = create_ws_bridge_app(self._ws_bridge_hub)
+            logger.info("ViyvMCP: WebSocket bridge enabled")
+        else:
+            key_manager = None
+            logger.info("ViyvMCP: WebSocket bridge disabled")
+
         # --- その他のルートのためのStarletteアプリ ------------------------- #
         routes = [
             Mount(path, app=factory() if callable(factory) else factory)
             for path, factory in list_entries()
         ]
+
+        # WebSocket bridge routes
+        if Config.WS_BRIDGE_ENABLED and key_manager:
+            routes.append(Mount("/ws/bridge", app=ws_bridge_app))
+            routes.append(Mount("/relay", routes=create_key_api(key_manager)))
 
         routes.append(
             Mount(
@@ -114,6 +163,11 @@ class ViyvMCP:
                 try:
                     yield
                 finally:
+                    # Close all WS bridge sessions
+                    if self._ws_bridge_hub:
+                        for key, session in list(self._ws_bridge_hub.sessions.items()):
+                            await session.close()
+                        logger.info("ViyvMCP: WebSocket bridge sessions closed")
                     await bridges_shutdown()
 
         self._starlette_app = Starlette(routes=routes, lifespan=lifespan)
