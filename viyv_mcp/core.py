@@ -35,6 +35,8 @@ class ViyvMCP:
         self.server_name = server_name
         self.stateless_http = stateless_http
         self._mcp: FastMCP | None = None
+        self._relay_mcp: FastMCP | None = None  # Browser-only MCP for relay
+        self._relay_mcp_app = None
         self._ws_bridge_hub: WebSocketBridgeHub | None = None
         self._ws_registered_tools: dict[str, list[str]] = {}  # key -> tool names
         self._asgi_app = self._create_asgi_app()
@@ -92,25 +94,32 @@ class ViyvMCP:
                 storage_path=Config.RELAY_KEY_STORAGE,
             )
 
+            # Relay-only MCP: serves only browser tools at /relay/mcp
+            self._relay_mcp = FastMCP(f"{self.server_name} (Relay)")
+            self._relay_mcp_app = self._relay_mcp.http_app(
+                path="/",
+                stateless_http=self.stateless_http,
+            )
+
             def _on_ws_connect(key: str, session):
-                """Register browser tools when Chrome extension connects."""
+                """Register browser tools on relay-only MCP."""
                 tool_names = register_browser_tools_for_session(
-                    self._mcp, session, tags={'browser', 'relay'},
+                    self._relay_mcp, session, tags={'browser', 'relay'},
                 )
                 self._ws_registered_tools[key] = tool_names
                 logger.info(
                     f"[ws-bridge:{session.key_prefix}] "
-                    f"Registered {len(tool_names)} browser tools on MCP"
+                    f"Registered {len(tool_names)} browser tools on relay MCP"
                 )
 
             def _on_ws_disconnect(key: str, session):
-                """Unregister browser tools when Chrome extension disconnects."""
+                """Unregister browser tools from relay-only MCP."""
                 tool_names = self._ws_registered_tools.pop(key, [])
                 if tool_names:
-                    unregister_bridged_tools(self._mcp, tool_names)
+                    unregister_bridged_tools(self._relay_mcp, tool_names)
                     logger.info(
                         f"[ws-bridge:{session.key_prefix}] "
-                        f"Unregistered {len(tool_names)} browser tools from MCP"
+                        f"Unregistered {len(tool_names)} browser tools from relay MCP"
                     )
 
             self._ws_bridge_hub = WebSocketBridgeHub(
@@ -119,7 +128,7 @@ class ViyvMCP:
                 on_disconnect=_on_ws_disconnect,
             )
             ws_bridge_app = create_ws_bridge_app(self._ws_bridge_hub)
-            logger.info("ViyvMCP: WebSocket bridge enabled")
+            logger.info("ViyvMCP: WebSocket bridge enabled (relay MCP at /relay/mcp)")
         else:
             key_manager = None
             logger.info("ViyvMCP: WebSocket bridge disabled")
@@ -154,21 +163,30 @@ class ViyvMCP:
             logger.warning("MCP app router lifespan not found, using no-op")
             mcp_lifespan = _noop_lifespan
 
+        # Relay MCP lifespan (needed for StreamableHTTPSessionManager)
+        try:
+            relay_lifespan = self._relay_mcp_app.router.lifespan_context if self._relay_mcp_app else None
+        except AttributeError:
+            relay_lifespan = None
+
         @asynccontextmanager
         async def lifespan(app):
             # ① MCP 側の session/lifespan を起動
             async with mcp_lifespan(app):
-                # ② 外部ブリッジなど自前初期化
-                await bridges_startup()
-                try:
-                    yield
-                finally:
-                    # Close all WS bridge sessions
-                    if self._ws_bridge_hub:
-                        for key, session in list(self._ws_bridge_hub.sessions.items()):
-                            await session.close()
-                        logger.info("ViyvMCP: WebSocket bridge sessions closed")
-                    await bridges_shutdown()
+                # ①b Relay MCP の lifespan も起動
+                relay_ctx = relay_lifespan(app) if relay_lifespan else _noop_lifespan(app)
+                async with relay_ctx:
+                    # ② 外部ブリッジなど自前初期化
+                    await bridges_startup()
+                    try:
+                        yield
+                    finally:
+                        # Close all WS bridge sessions
+                        if self._ws_bridge_hub:
+                            for key, session in list(self._ws_bridge_hub.sessions.items()):
+                                await session.close()
+                            logger.info("ViyvMCP: WebSocket bridge sessions closed")
+                        await bridges_shutdown()
 
         self._starlette_app = Starlette(routes=routes, lifespan=lifespan)
 
@@ -185,14 +203,21 @@ class ViyvMCP:
         """カスタムASGIルーター: /mcpパスを直接MCPアプリに、それ以外をStarletteに"""
         path = scope.get("path", "")
 
-        # /mcp パスはMCPアプリに直接ルーティング（Starletteを経由しない）
+        # /relay/mcp → Relay-only MCP (browser tools only)
+        if path.startswith("/relay/mcp") and self._relay_mcp_app:
+            new_path = path[10:] if len(path) > 10 else "/"
+            scope = dict(scope)
+            scope["path"] = new_path
+            scope["raw_path"] = new_path.encode()
+            return await self._relay_mcp_app(scope, receive, send)
+
+        # /mcp → Main MCP (all tools except browser relay)
         if path.startswith("/mcp"):
-            # パスを調整: /mcp/xxx -> /xxx
             new_path = path[4:] if len(path) > 4 else "/"
             scope = dict(scope)
             scope["path"] = new_path
             scope["raw_path"] = new_path.encode()
             return await self._mcp_app(scope, receive, send)
-        else:
-            # その他のパスはStarletteアプリに
-            return await self._starlette_app(scope, receive, send)
+
+        # その他のパスはStarletteアプリに
+        return await self._starlette_app(scope, receive, send)

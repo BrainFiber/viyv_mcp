@@ -48,13 +48,27 @@ BROWSER_TOOLS = [
                     'type': 'integer',
                     'description': 'Tab ID (from tabs_create or tabs_context)',
                 },
-                'selector': {
+                'ref': {
                     'type': 'string',
-                    'description': 'CSS selector to screenshot',
+                    'description': 'Element reference ID to capture',
                 },
-                'fullPage': {
-                    'type': 'boolean',
-                    'description': 'Capture full page',
+                'region': {
+                    'type': 'array',
+                    'items': {'type': 'number'},
+                    'minItems': 4,
+                    'maxItems': 4,
+                    'description': 'Capture region [x0, y0, x1, y1]',
+                },
+                'format': {
+                    'type': 'string',
+                    'enum': ['jpeg', 'png'],
+                    'description': 'Image format (default: jpeg)',
+                },
+                'quality': {
+                    'type': 'integer',
+                    'minimum': 1,
+                    'maximum': 100,
+                    'description': 'JPEG quality (default: 80)',
                 },
             },
             'required': ['tabId'],
@@ -62,7 +76,7 @@ BROWSER_TOOLS = [
     },
     {
         'name': 'click',
-        'description': 'Click on an element in the specified tab',
+        'description': 'Click on an element in the specified tab. Provide coordinate [x,y] or ref.',
         'inputSchema': {
             'type': 'object',
             'properties': {
@@ -70,17 +84,25 @@ BROWSER_TOOLS = [
                     'type': 'integer',
                     'description': 'Tab ID (from tabs_create or tabs_context)',
                 },
-                'selector': {
+                'coordinate': {
+                    'type': 'array',
+                    'items': {'type': 'number'},
+                    'minItems': 2,
+                    'maxItems': 2,
+                    'description': 'Click position [x, y]',
+                },
+                'ref': {
                     'type': 'string',
-                    'description': 'CSS selector or text to click',
+                    'description': 'Element reference ID from read_page or find',
                 },
-                'x': {
-                    'type': 'number',
-                    'description': 'X coordinate',
+                'action': {
+                    'type': 'string',
+                    'enum': ['left_click', 'right_click', 'double_click', 'triple_click'],
+                    'description': 'Click type (default: left_click)',
                 },
-                'y': {
-                    'type': 'number',
-                    'description': 'Y coordinate',
+                'modifiers': {
+                    'type': 'string',
+                    'description': 'Modifier keys (e.g. "ctrl+shift")',
                 },
             },
             'required': ['tabId'],
@@ -110,7 +132,7 @@ BROWSER_TOOLS = [
     },
     {
         'name': 'read_page',
-        'description': 'Read the content of the specified tab',
+        'description': 'Get accessibility tree of the specified tab',
         'inputSchema': {
             'type': 'object',
             'properties': {
@@ -118,9 +140,24 @@ BROWSER_TOOLS = [
                     'type': 'integer',
                     'description': 'Tab ID (from tabs_create or tabs_context)',
                 },
-                'selector': {
+                'filter': {
                     'type': 'string',
-                    'description': 'CSS selector to scope reading',
+                    'enum': ['interactive', 'all'],
+                    'description': 'Filter: "interactive" for buttons/links/inputs, "all" for everything',
+                },
+                'depth': {
+                    'type': 'integer',
+                    'minimum': 1,
+                    'maximum': 20,
+                    'description': 'Max tree depth (default: 15)',
+                },
+                'maxChars': {
+                    'type': 'integer',
+                    'description': 'Max output characters (default: 50000)',
+                },
+                'refId': {
+                    'type': 'string',
+                    'description': 'Focus on a specific element by ref',
                 },
             },
             'required': ['tabId'],
@@ -211,7 +248,7 @@ BROWSER_TOOLS = [
     },
     {
         'name': 'scroll',
-        'description': 'Scroll the page in the specified tab',
+        'description': 'Scroll the page in the specified tab. Provide coordinate+direction or ref.',
         'inputSchema': {
             'type': 'object',
             'properties': {
@@ -219,17 +256,27 @@ BROWSER_TOOLS = [
                     'type': 'integer',
                     'description': 'Tab ID (from tabs_create or tabs_context)',
                 },
+                'coordinate': {
+                    'type': 'array',
+                    'items': {'type': 'number'},
+                    'minItems': 2,
+                    'maxItems': 2,
+                    'description': 'Scroll position [x, y]',
+                },
                 'direction': {
                     'type': 'string',
-                    'description': 'Scroll direction: up, down, left, right',
+                    'enum': ['up', 'down', 'left', 'right'],
+                    'description': 'Scroll direction',
                 },
                 'amount': {
                     'type': 'integer',
-                    'description': 'Scroll amount in pixels',
+                    'minimum': 1,
+                    'maximum': 10,
+                    'description': 'Scroll amount (default: 3)',
                 },
-                'selector': {
+                'ref': {
                     'type': 'string',
-                    'description': 'CSS selector of element to scroll',
+                    'description': 'Element reference ID to scroll into view',
                 },
             },
             'required': ['tabId'],
@@ -237,7 +284,7 @@ BROWSER_TOOLS = [
     },
     {
         'name': 'find',
-        'description': 'Find elements on the page in the specified tab',
+        'description': 'Find elements on the page using a natural language query',
         'inputSchema': {
             'type': 'object',
             'properties': {
@@ -245,21 +292,17 @@ BROWSER_TOOLS = [
                     'type': 'integer',
                     'description': 'Tab ID (from tabs_create or tabs_context)',
                 },
-                'text': {
+                'query': {
                     'type': 'string',
-                    'description': 'Text to find',
-                },
-                'selector': {
-                    'type': 'string',
-                    'description': 'CSS selector to find',
+                    'description': 'Natural language description of what to find',
                 },
             },
-            'required': ['tabId'],
+            'required': ['tabId', 'query'],
         },
     },
     {
         'name': 'hover',
-        'description': 'Hover over an element in the specified tab',
+        'description': 'Hover over an element in the specified tab. Provide coordinate [x,y] or ref.',
         'inputSchema': {
             'type': 'object',
             'properties': {
@@ -267,17 +310,16 @@ BROWSER_TOOLS = [
                     'type': 'integer',
                     'description': 'Tab ID (from tabs_create or tabs_context)',
                 },
-                'selector': {
+                'coordinate': {
+                    'type': 'array',
+                    'items': {'type': 'number'},
+                    'minItems': 2,
+                    'maxItems': 2,
+                    'description': 'Hover position [x, y]',
+                },
+                'ref': {
                     'type': 'string',
-                    'description': 'CSS selector',
-                },
-                'x': {
-                    'type': 'number',
-                    'description': 'X coordinate',
-                },
-                'y': {
-                    'type': 'number',
-                    'description': 'Y coordinate',
+                    'description': 'Element reference ID from read_page or find',
                 },
             },
             'required': ['tabId'],
@@ -285,7 +327,7 @@ BROWSER_TOOLS = [
     },
     {
         'name': 'key',
-        'description': 'Press a keyboard key in the specified tab',
+        'description': 'Press keyboard key(s) in the specified tab. Space-separated key names.',
         'inputSchema': {
             'type': 'object',
             'properties': {
@@ -293,17 +335,18 @@ BROWSER_TOOLS = [
                     'type': 'integer',
                     'description': 'Tab ID (from tabs_create or tabs_context)',
                 },
-                'key': {
+                'keys': {
                     'type': 'string',
-                    'description': 'Key to press (e.g. Enter, Tab, Escape)',
+                    'description': 'Space-separated keys (e.g. "Enter", "ctrl+a")',
                 },
-                'modifiers': {
-                    'type': 'array',
-                    'description': 'Modifier keys (ctrl, alt, shift, meta)',
-                    'items': {'type': 'string'},
+                'repeat': {
+                    'type': 'integer',
+                    'minimum': 1,
+                    'maximum': 100,
+                    'description': 'Repeat count (default: 1)',
                 },
             },
-            'required': ['tabId', 'key'],
+            'required': ['tabId', 'keys'],
         },
     },
     {
@@ -348,13 +391,13 @@ BROWSER_TOOLS = [
                     'type': 'string',
                     'description': 'CSS selector to wait for',
                 },
-                'text': {
-                    'type': 'string',
-                    'description': 'Text to wait for',
+                'navigation': {
+                    'type': 'boolean',
+                    'description': 'Wait for navigation to complete',
                 },
                 'timeout': {
                     'type': 'integer',
-                    'description': 'Timeout in milliseconds',
+                    'description': 'Timeout in ms (default: 30000)',
                 },
             },
             'required': ['tabId'],
@@ -370,24 +413,22 @@ BROWSER_TOOLS = [
                     'type': 'integer',
                     'description': 'Tab ID (from tabs_create or tabs_context)',
                 },
-                'from_x': {
-                    'type': 'number',
-                    'description': 'Start X coordinate',
+                'startCoordinate': {
+                    'type': 'array',
+                    'items': {'type': 'number'},
+                    'minItems': 2,
+                    'maxItems': 2,
+                    'description': 'Start position [x, y]',
                 },
-                'from_y': {
-                    'type': 'number',
-                    'description': 'Start Y coordinate',
-                },
-                'to_x': {
-                    'type': 'number',
-                    'description': 'End X coordinate',
-                },
-                'to_y': {
-                    'type': 'number',
-                    'description': 'End Y coordinate',
+                'endCoordinate': {
+                    'type': 'array',
+                    'items': {'type': 'number'},
+                    'minItems': 2,
+                    'maxItems': 2,
+                    'description': 'End position [x, y]',
                 },
             },
-            'required': ['tabId', 'from_x', 'from_y', 'to_x', 'to_y'],
+            'required': ['tabId', 'startCoordinate', 'endCoordinate'],
         },
     },
     {
