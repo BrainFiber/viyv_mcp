@@ -8,8 +8,6 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Any, Awaitable, Callable
 
-from starlette.types import ASGIApp
-
 logger = logging.getLogger(__name__)
 
 
@@ -19,35 +17,31 @@ async def _noop_lifespan(app: Any):
 
 
 def compose_lifespan(
-    mcp_app: ASGIApp,
-    relay_mcp_app: ASGIApp | None,
+    mcp_lifespan: Callable | None,
+    relay_lifespan: Callable | None,
     bridges_startup: Callable[[], Awaitable[None]],
     bridges_shutdown: Callable[[], Awaitable[None]],
     ws_bridge_hub: Any | None,
 ) -> Callable:
-    """MCP → Relay → Bridge → WS cleanup のネストされた lifespan を構築する。"""
+    """MCP → Relay → Bridge → WS cleanup のネストされた lifespan を構築する。
 
-    # MCP lifespan の取得
-    try:
-        mcp_lifespan = mcp_app.router.lifespan_context
-    except AttributeError:
-        logger.warning("MCP app router lifespan not found, using no-op")
-        mcp_lifespan = _noop_lifespan
-
-    # Relay MCP lifespan の取得
-    relay_lifespan = None
-    if relay_mcp_app:
-        try:
-            relay_lifespan = relay_mcp_app.router.lifespan_context
-        except AttributeError:
-            pass
+    Parameters
+    ----------
+    mcp_lifespan : async context manager factory, or None
+        FastMCP の StreamableHTTPSessionManager lifespan。
+        ``mcp_http_app.router.lifespan_context`` から取得したものを渡す。
+    relay_lifespan : same, or None
+        Relay MCP 用。WS ブリッジ無効時は None。
+    """
+    _mcp_ls = mcp_lifespan or _noop_lifespan
+    _relay_ls = relay_lifespan
 
     @asynccontextmanager
     async def lifespan(app: Any):
         # ① MCP 側の session/lifespan を起動
-        async with mcp_lifespan(app):
-            # ②  Relay MCP の lifespan も起動
-            relay_ctx = relay_lifespan(app) if relay_lifespan else _noop_lifespan(app)
+        async with _mcp_ls(app):
+            # ② Relay MCP の lifespan も起動
+            relay_ctx = _relay_ls(app) if _relay_ls else _noop_lifespan(app)
             async with relay_ctx:
                 # ③ 外部ブリッジ起動
                 await bridges_startup()

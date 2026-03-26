@@ -71,16 +71,24 @@ def _get_resource_uri(resource: types.Resource) -> str:
 
 async def init_bridges(
     mcp: FastMCP,
-    config_dir: str,
+    config: str,
 ) -> List[BridgeHandle]:
     """
-    config_dir/*.json を走査し、外部 MCP サーバー(stdio)を起動して
-    list_tools / list_resources / list_prompts を取得し、FastMCP に動的登録。
-    戻り値: [(server_name, exit_stack, session), ...]
+    外部 MCP サーバー(stdio)を起動して tools/resources/prompts を動的登録。
+
+    Parameters
+    ----------
+    config : str
+        ディレクトリパス (*.json をスキャン) または単一 JSON ファイルパス。
     """
     bridges: List[BridgeHandle] = []
 
-    for cfg_file in glob.glob(os.path.join(config_dir, "*.json")):
+    if os.path.isfile(config):
+        cfg_files = [config]
+    else:
+        cfg_files = glob.glob(os.path.join(config, "*.json"))
+
+    for cfg_file in cfg_files:
         try:
             with open(cfg_file, "r", encoding="utf-8") as f:
                 cfg = json.load(f)

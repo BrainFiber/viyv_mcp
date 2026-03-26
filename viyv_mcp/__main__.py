@@ -1,4 +1,4 @@
-"""``python -m viyv_mcp`` entry-point for security / admin CLI commands."""
+"""``python -m viyv_mcp`` entry-point for CLI commands."""
 
 from __future__ import annotations
 
@@ -55,10 +55,38 @@ def cmd_generate_jwt(args: argparse.Namespace) -> None:
     print(token)
 
 
+def cmd_serve(args: argparse.Namespace) -> None:
+    """Start MCP server with bridge configs (no project directory needed)."""
+    import asyncio
+    from viyv_mcp import ViyvMCP
+
+    bridge_config = os.path.abspath(args.bridges) if args.bridges else None
+    if bridge_config and not os.path.exists(bridge_config):
+        print(f"Error: bridge config not found: {bridge_config}", file=sys.stderr)
+        sys.exit(1)
+
+    app = ViyvMCP(
+        server_name=args.name,
+        stateless_http=True if args.http else None,
+        bridge_config=bridge_config,
+    )
+
+    if args.http:
+        import uvicorn
+        uvicorn.run(
+            app.get_app(),
+            host=args.host,
+            port=args.port,
+            log_level="info",
+        )
+    else:
+        asyncio.run(app.run_stdio_async())
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="python -m viyv_mcp",
-        description="viyv_mcp CLI — security & admin commands",
+        description="viyv_mcp CLI",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
 
@@ -79,10 +107,26 @@ def main() -> None:
     p_jwt.add_argument("--secret", default="", help="JWT signing secret (or set VIYV_MCP_JWT_SECRET)")
     p_jwt.add_argument("--algorithm", default="HS256", help="JWT algorithm (default: HS256)")
 
+    # --- serve --------------------------------------------------------- #
+    p_serve = subparsers.add_parser(
+        "serve",
+        help="Start MCP server (stdio or HTTP, no project dir needed)",
+    )
+    p_serve.add_argument(
+        "--bridges", required=True,
+        help="Path to bridge config JSON file or directory of *.json files",
+    )
+    p_serve.add_argument("--name", default="viyv-bridge", help="Server name (default: viyv-bridge)")
+    p_serve.add_argument("--http", action="store_true", help="Use HTTP transport instead of stdio")
+    p_serve.add_argument("--host", default="0.0.0.0", help="HTTP host (default: 0.0.0.0)")
+    p_serve.add_argument("--port", type=int, default=8000, help="HTTP port (default: 8000)")
+
     args = parser.parse_args()
 
     if args.command == "generate-jwt":
         cmd_generate_jwt(args)
+    elif args.command == "serve":
+        cmd_serve(args)
     else:
         parser.print_help()
         sys.exit(1)

@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-03-27
+
+### Fixed
+- **HTTP lifespan not initialized with security**: `compose_lifespan` now receives explicit lifespan callables instead of extracting from ASGI apps (which fails after security wrapping)
+- **`init_bridges` single-file support**: Accepts both a directory path and a single JSON file path
+
+### Added
+- **`ViyvMCP.run_stdio_async()`**: Complete stdio transport entry point with bridge lifecycle management and security middleware support
+- **`python -m viyv_mcp serve` CLI**: Start MCP server without a project directory — bridges external servers via `--bridges` flag (stdio default, `--http` for HTTP mode)
+- **`ViyvMCP(bridge_config=...)` parameter**: Override bridge config path (file or directory)
+
 ## [1.0.0] - 2026-03-27
 
 ### Changed (Architecture)

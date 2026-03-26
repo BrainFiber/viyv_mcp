@@ -22,18 +22,30 @@ from viyv_mcp.app.lifespan_composer import compose_lifespan
 logger = logging.getLogger(__name__)
 
 
+def _extract_lifespan(app):
+    """Starlette/FastMCP app から lifespan context を安全に取得する。"""
+    if app is None:
+        return None
+    try:
+        return app.router.lifespan_context
+    except AttributeError:
+        return None
+
+
 class ViyvMCP:
     """Streamable HTTP + 静的配信 + エントリー群を 1 つにまとめる ASGI アプリ"""
 
     def __init__(
         self,
         server_name: str = "My Streamable HTTP MCP Server",
-        stateless_http: bool | None = None
+        stateless_http: bool | None = None,
+        bridge_config: str | None = None,
     ) -> None:
         monkey_patch_mcp_validation()
 
         self.server_name = server_name
         self.stateless_http = stateless_http
+        self._bridge_config = bridge_config or Config.BRIDGE_CONFIG_DIR
         self._mcp: FastMCP | None = None
         self._mcp_app = None
         self._relay_mcp: FastMCP | None = None
@@ -94,37 +106,46 @@ class ViyvMCP:
         self._relay_mcp_app = ws.relay_mcp_app
         self._ws_bridge_hub = ws.ws_bridge_hub
 
-        # 4. セキュリティ
+        # 4. lifespan をセキュリティ適用前に取得
+        #    (apply_security の ASGI ラッパが .router 属性を隠すため)
+        mcp_lifespan = _extract_lifespan(self._mcp_app)
+        relay_lifespan = _extract_lifespan(self._relay_mcp_app)
+
+        # 5. セキュリティ (ASGI ラッパで mcp_app を上書き)
         self._mcp_app, self._relay_mcp_app = apply_security(
             self._mcp, self._mcp_app,
             self._relay_mcp, self._relay_mcp_app,
         )
 
-        # 5. ブリッジ startup/shutdown
+        # 6. ブリッジ startup/shutdown
+        bridge_config = self._bridge_config
+
         async def bridges_startup():
             logger.info("=== ViyvMCP startup: bridging external MCP servers ===")
-            self._bridges = await init_bridges(self._mcp, Config.BRIDGE_CONFIG_DIR)
+            self._bridges = await init_bridges(self._mcp, bridge_config)
 
         async def bridges_shutdown():
             logger.info("=== ViyvMCP shutdown: closing external MCP servers ===")
             if self._bridges:
                 await close_bridges(self._bridges)
 
-        # 6. 複合 lifespan
+        # 7. 複合 lifespan (セキュリティ適用前に取得した lifespan を渡す)
         lifespan = compose_lifespan(
-            self._mcp_app, self._relay_mcp_app,
-            bridges_startup, bridges_shutdown,
-            self._ws_bridge_hub,
+            mcp_lifespan=mcp_lifespan,
+            relay_lifespan=relay_lifespan,
+            bridges_startup=bridges_startup,
+            bridges_shutdown=bridges_shutdown,
+            ws_bridge_hub=self._ws_bridge_hub,
         )
 
-        # 7. ルート + Starlette
+        # 8. ルート + Starlette
         routes = build_routes(ws.ws_routes, static_dir)
         self._starlette_app = Starlette(routes=routes, lifespan=lifespan)
 
         return self
 
     # --------------------------------------------------------------------- #
-    #  ASGI エントリポイント                                                   #
+    #  ASGI エントリポイント (HTTP)                                            #
     # --------------------------------------------------------------------- #
     def get_app(self):
         return self._asgi_app
@@ -151,3 +172,19 @@ class ViyvMCP:
 
         # その他のパスは Starlette アプリに
         return await self._starlette_app(scope, receive, send)
+
+    # --------------------------------------------------------------------- #
+    #  stdio エントリポイント                                                  #
+    # --------------------------------------------------------------------- #
+    async def run_stdio_async(self):
+        """stdio transport で MCP サーバーを起動する。
+
+        セキュリティ middleware (mcp.add_middleware 済み) とブリッジの
+        ライフサイクルを含む完全な起動メソッド。
+        """
+        bridges = await init_bridges(self._mcp, self._bridge_config)
+        try:
+            await self._mcp.run_stdio_async()
+        finally:
+            if bridges:
+                await close_bridges(bridges)
