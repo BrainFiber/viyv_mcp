@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Removed
+- **Slack Adapter** (`slack_adapter.py`): Moved out of core package. `slack-bolt` and `aiohttp` removed from hard dependencies (available as `pip install viyv_mcp[slack]`)
+- **OpenAI Agents SDK Bridge** (`openai_bridge.py`): Moved out of core package. `openai-agents` removed from hard dependencies (available as `pip install viyv_mcp[openai]`)
+- **RunContext** (`run_context.py`): Abstract base class removed (was only used by Slack Adapter)
+- Slack/OpenAI-dependent template files and example agents
+
 ## [Unreleased] - JWT Authentication & Access Control
 
 ### Added

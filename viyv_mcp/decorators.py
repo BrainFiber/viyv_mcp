@@ -279,8 +279,7 @@ def _wrap_callable_with_tools(
             if any(_is_wrapper(p) for p in fn_sig.parameters.values()):
                 # RunContextWrapperのインスタンスを作成
                 if RunContextWrapper is not None:
-                    from viyv_mcp.run_context import RunContext
-                    wrapper_instance = RunContextWrapper[RunContext](None)  # type: ignore
+                    wrapper_instance = RunContextWrapper(None)  # type: ignore
                     # 最初の引数として追加
                     if args:
                         args = (wrapper_instance,) + args

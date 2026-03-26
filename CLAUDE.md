@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-`viyv_mcp` is a Python package that wraps FastMCP and Starlette to quickly create MCP (Model Context Protocol) servers with minimal boilerplate. It provides decorator-based APIs for tools, resources, prompts, and agents, plus adapters for Slack and OpenAI Agents integration.
+`viyv_mcp` is a Python package that wraps FastMCP and Starlette to quickly create MCP (Model Context Protocol) servers with minimal boilerplate. It provides decorator-based APIs for tools, resources, prompts, and agents.
 
 ## Development Commands
 
@@ -66,9 +66,7 @@ STATELESS_HTTP=true uv run gunicorn test_app:app -w 4 -k uvicorn.workers.Uvicorn
   - `core.py` - ViyvMCP class that assembles the ASGI app with FastMCP and Starlette
   - `decorators.py` - Decorator implementations (@tool, @resource, @prompt, @agent, @entry)
   - `cli.py` - CLI for project generation (`create-viyv-mcp`)
-  - `openai_bridge.py` - Converts FastMCP tools to OpenAI Agents SDK functions
   - `agent_runtime.py` - Agent runtime utilities for tool execution
-  - `run_context.py` - Context management for Slack and other integrations
   - `app/` - Core application components
     - `config.py` - Configuration management (HOST, PORT, STATELESS_HTTP, etc.)
     - `registry.py` - Auto-registration of modules
@@ -76,7 +74,6 @@ STATELESS_HTTP=true uv run gunicorn test_app:app -w 4 -k uvicorn.workers.Uvicorn
     - `entry_registry.py` - Registry for FastAPI app entries
     - `mcp_initialize_fix.py` - Pydantic v2 compatibility patches for MCP protocol
     - `lifespan.py` - Application lifespan management
-    - `adapters/slack_adapter.py` - Slack event handling and integration
     - `security/` - JWT authentication and access control subsystem
       - `domain/models.py` - AgentIdentity, ToolSecurityMeta, AuthResult, AuthMode
       - `domain/policy.py` - Pure authorization functions (namespace, clearance)
@@ -103,11 +100,7 @@ STATELESS_HTTP=true uv run gunicorn test_app:app -w 4 -k uvicorn.workers.Uvicorn
 
 5. **ASGI Architecture**: Custom ASGI-level routing that sends `/mcp` paths directly to the MCP app, bypassing Starlette middleware to fix SSE streaming issues.
 
-6. **RunContextWrapper Pattern**: Tools receive a `RunContextWrapper[RunContext]` parameter that provides access to context like Slack events and user information. The signature is manipulated to work with both FastMCP and OpenAI Agents SDK.
-
-7. **Signature Manipulation**: The decorator system manipulates function signatures to support `RunContextWrapper` for agent execution while maintaining clean JSON Schema generation for FastMCP.
-
-8. **Stateless HTTP Support**: New feature (v0.1.10) that enables stateless HTTP connections for multi-worker deployments. When enabled, session IDs are not required for MCP requests.
+6. **Stateless HTTP Support**: New feature (v0.1.10) that enables stateless HTTP connections for multi-worker deployments. When enabled, session IDs are not required for MCP requests.
 
 9. **JWT Security (ContextVar + FastMCP Middleware hybrid)**: Agent identity established via JWT, enforced at FastMCP middleware level (works for both stdio and HTTP). ASGI middleware extracts JWT from HTTP Authorization headers and stores in ContextVar. For stdio, JWT is validated once at startup. Namespace controls tool visibility (tools/list filtering), security_level controls tool executability (tools/call clearance check).
 
@@ -118,16 +111,10 @@ STATELESS_HTTP=true uv run gunicorn test_app:app -w 4 -k uvicorn.workers.Uvicorn
 #### Creating a Tool
 ```python
 from viyv_mcp import tool
-from viyv_mcp.run_context import RunContext
-from agents import RunContextWrapper
 
 def register(mcp: FastMCP):
     @tool(description="Add two numbers", tags={"calc"})
-    def add(
-        wrapper: RunContextWrapper[RunContext],
-        a: int,
-        b: int
-    ) -> int:
+    def add(a: int, b: int) -> int:
         return a + b
 
     # Tool with security metadata
@@ -136,22 +123,8 @@ def register(mcp: FastMCP):
         namespace="hr",                 # Visible only to agents with hr namespace
         security_level="confidential",  # Requires confidential or higher clearance
     )
-    def query_salary(
-        wrapper: RunContextWrapper[RunContext],
-        employee_id: str,
-    ) -> str:
+    def query_salary(employee_id: str) -> str:
         return f"Salary for {employee_id}: $100,000"
-```
-
-#### Creating an Agent
-```python
-from viyv_mcp import agent
-from viyv_mcp.openai_bridge import build_function_tools
-
-@agent(name="calculator", use_tools=["add", "subtract"])
-async def calculator_agent(query: str) -> str:
-    oa_tools = build_function_tools(use_tools=["add", "subtract"])
-    # Agent implementation using OpenAI SDK
 ```
 
 #### Adding Custom Endpoints
@@ -187,19 +160,6 @@ Create JSON files in `app/mcp_server_configs/`:
 ```
 
 ### Integration Points
-
-- **Slack**: Use `SlackAdapter` to handle Slack events and attachments
-  - Full event handling with `@app_mention` support
-  - File upload/download capabilities
-  - Thread history building for conversation context
-  - Channel prompt extraction from topic/purpose
-  - RunContext integration for tool access
-
-- **OpenAI Agents**: Use `build_function_tools()` to convert MCP tools for OpenAI Agents SDK
-  - Function tool conversion with Pydantic validation
-  - Schema transformation (removes `default` keys, sets all fields as required)
-  - RunContextWrapper parameter injection
-  - Async wrapper for synchronous functions
 
 - **Custom Endpoints**: Use `@entry(path)` decorator to mount additional FastAPI apps
   - Dynamic tool middleware injection
@@ -254,11 +214,8 @@ Core dependencies include:
 - `fastmcp>=3.1.0` - MCP protocol implementation
 - `starlette>=0.25.0` - ASGI framework
 - `uvicorn>=0.22.0` - ASGI server
-- `slack-bolt>=1.23.0` - Slack integration
-- `openai-agents>=0.0.13` - OpenAI Agents SDK integration
 - `pytest>=7.0` - Testing framework
 - `pydantic>=2` - Data validation (v2 compatibility focus)
-- `aiohttp>=3.11.18` - Async HTTP client
 - `PyJWT>=2.0` - JWT token encoding/decoding for security
 
 Optional dependencies:
@@ -273,7 +230,6 @@ Optional dependencies:
 - All decorators work by finding the FastMCP instance from the call stack
 - The package is distributed on PyPI as `viyv_mcp` (current version: 0.1.21)
 - Generated projects use `uv` for dependency management via `pyproject.toml`
-- Tools using RunContextWrapper can access Slack events and user context when available
 - The test/ directory contains working examples rather than unit tests - use these as reference implementations
 - External MCP servers are managed as child processes with stdio-based communication
 - ASGI-level routing fixes SSE streaming issues that occurred with middleware

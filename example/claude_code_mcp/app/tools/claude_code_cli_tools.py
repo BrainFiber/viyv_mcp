@@ -9,8 +9,6 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List, Annotated
 from datetime import datetime
 from viyv_mcp import tool
-from viyv_mcp.run_context import RunContext
-from agents import RunContextWrapper
 from pydantic import Field
 from fastmcp import FastMCP
 import logging
@@ -229,7 +227,6 @@ def register(mcp: FastMCP):
     
     @tool(description="Create, analyze, and modify code files with an AI developer assistant that maintains conversation context", tags={"claude", "cli", "code", "developer"})
     async def claude_cli(
-        wrapper: RunContextWrapper[RunContext],
         prompt: Annotated[
             str,
             Field(
@@ -289,7 +286,6 @@ def register(mcp: FastMCP):
     
     @tool(description="View your previous development sessions and their progress", tags={"claude", "cli", "session", "history"})
     async def list_claude_cli_sessions(
-        wrapper: RunContextWrapper[RunContext],
         limit: Annotated[
             int,
             Field(
@@ -330,7 +326,6 @@ def register(mcp: FastMCP):
     
     @tool(description="Clean up old development sessions to free up storage", tags={"claude", "cli", "session", "cleanup"})
     async def delete_claude_cli_session(
-        wrapper: RunContextWrapper[RunContext],
         context_id: Annotated[
             str,
             Field(
@@ -352,7 +347,6 @@ def register(mcp: FastMCP):
     
     @tool(description="Check if the AI developer assistant is properly installed and ready to use", tags={"claude", "cli", "info", "status"})
     async def claude_cli_version(
-        wrapper: RunContextWrapper[RunContext],
     ) -> str:
         """Verify that the development environment is set up correctly and ready for coding tasks"""
         claude_path = shutil.which('claude')

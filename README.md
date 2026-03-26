@@ -37,18 +37,6 @@ def add(a: int, b: int) -> int:
     return a + b
 ```
 
-### 🤖 Agent Support with OpenAI Integration
-```python
-from viyv_mcp import agent
-from viyv_mcp.openai_bridge import build_function_tools
-
-@agent(name="calculator", use_tools=["add", "subtract"])
-async def calculator_agent(query: str) -> str:
-    tools = build_function_tools(use_tools=["add", "subtract"])
-    # Agent implementation using OpenAI SDK
-    return f"Result: {result}"
-```
-
 ### 🌉 External MCP Server Bridge
 ```json
 // app/mcp_server_configs/filesystem.json
@@ -99,9 +87,6 @@ python -m viyv_mcp generate-jwt \
 - **Both transports**: Works for stdio (`.mcp.json`) and HTTP
 
 ### 🔗 Built-in Integrations
-- **Slack**: Full event handling, file management, thread context
-- **OpenAI Agents SDK**: Seamless function calling bridge
-- **ChatGPT**: Compatible with required `search`/`fetch` tools
 - **Custom FastAPI Endpoints**: Mount additional APIs with `@entry`
 
 ## 📦 Installation
@@ -110,8 +95,8 @@ python -m viyv_mcp generate-jwt \
 # Basic installation
 pip install viyv_mcp
 
-# With all optional dependencies
-pip install "viyv_mcp[slack,openai]"
+# With optional security config (YAML support)
+pip install "viyv_mcp[security]"
 ```
 
 ## 📁 Project Structure
@@ -135,27 +120,6 @@ my_project/
 ```
 
 ## 💻 Advanced Usage Examples
-
-### Tools with Runtime Context (Slack Integration)
-
-```python
-from viyv_mcp import tool
-from viyv_mcp.run_context import RunContext
-from agents import RunContextWrapper
-
-def register(mcp):
-    @tool(description="Get user info from context")
-    def get_user_info(
-        wrapper: RunContextWrapper[RunContext],
-        user_id: str
-    ) -> dict:
-        """Get user information from Slack context"""
-        context = wrapper.context
-        if context and hasattr(context, 'slack_event'):
-            # Access Slack event data
-            return {"user": context.slack_event.get("user"), "channel": context.channel}
-        return {"user": user_id, "source": "direct"}
-```
 
 ### Creating Resources with URI Templates
 
@@ -190,44 +154,6 @@ def register(mcp):
         ```
         Focus on: performance, security, and best practices.
         """
-```
-
-### Slack Bot with File Handling
-
-```python
-from viyv_mcp import entry
-from viyv_mcp.app.adapters.slack_adapter import SlackAdapter
-from viyv_mcp.run_context import RunContext
-
-@entry("/slack")
-def create_slack_app():
-    adapter = SlackAdapter(
-        bot_token=os.getenv("SLACK_BOT_TOKEN"),
-        signing_secret=os.getenv("SLACK_SIGNING_SECRET"),
-        context_cls=RunContext,
-        handle_files=True,  # Enable file upload/download
-        build_thread_history=True,  # Include thread context
-    )
-    return adapter.as_fastapi_app()
-```
-
-### ChatGPT-Compatible Tools
-
-```python
-from viyv_mcp import tool
-
-def register(mcp):
-    # Required for ChatGPT integration
-    @tool(description="Search for information")
-    def search(query: str) -> list:
-        """Search tool required by ChatGPT"""
-        results = perform_search(query)
-        return [{"resource_link": f"resource://{r.id}", "title": r.title} for r in results]
-
-    @tool(description="Fetch resource by ID")
-    def fetch(id: str) -> dict:
-        """Fetch tool required by ChatGPT (note: 'id' not 'uri')"""
-        return get_resource_by_id(id)
 ```
 
 ### 📂 Tool Grouping (New in v0.1.13)
@@ -297,11 +223,6 @@ STATELESS_HTTP=true              # Enable stateless mode for multi-worker
 # Directory Configuration
 BRIDGE_CONFIG_DIR=app/mcp_server_configs  # External MCP configs
 STATIC_DIR=static/images                  # Static file serving
-
-# Integration Keys (optional)
-SLACK_BOT_TOKEN=xoxb-...        # Slack bot token
-SLACK_SIGNING_SECRET=...        # Slack signing secret
-OPENAI_API_KEY=sk-...           # OpenAI API key
 ```
 
 ### Configuration Class
@@ -336,11 +257,6 @@ viyv_mcp implements custom ASGI routing to fix SSE streaming issues:
 - Tools are refreshed on every request
 - Agents always have access to the latest tools
 - Supports runtime tool filtering with tags
-
-### RunContextWrapper Pattern
-- Signature manipulation for dual compatibility
-- Works with both FastMCP and OpenAI Agents SDK
-- Provides access to runtime context (Slack events, user info)
 
 ### External MCP Server Management
 - Child process management with stdio communication
@@ -437,8 +353,6 @@ Complete working examples in the `example/` directory:
 
 - **`claude_code_mcp`**: Claude Code CLI integration
 - **`test`**: Comprehensive example with all features
-  - Slack integration
-  - OpenAI Agents
   - External MCP servers
   - Custom endpoints
 
@@ -471,7 +385,6 @@ STATELESS_HTTP=true uv run python main.py
 ### Testing Guidelines
 - Add sample implementations in `test/` directory
 - Test with both session and stateless modes
-- Verify Slack and OpenAI integrations
 - Check external MCP server bridging
 
 ## 📄 License
@@ -487,8 +400,6 @@ MIT License - see the [LICENSE](LICENSE) file for details.
 - Built on [FastMCP](https://github.com/jlowin/fastmcp) by jlowin
 - Powered by [Starlette](https://www.starlette.io/) ASGI framework
 - Implements [Model Context Protocol](https://modelcontextprotocol.io/) specification
-- Slack integration via [Slack Bolt](https://slack.dev/bolt-python/)
-- OpenAI integration via [OpenAI Agents SDK](https://github.com/openai/agents-sdk)
 
 ## 📮 Support
 
@@ -537,12 +448,6 @@ MIT License - see the [LICENSE](LICENSE) file for details.
 ### v0.1.9
 - 🌉 External MCP server bridging with tags and filtering
 - 🔄 Dynamic tool refresh on every request
-- 📝 RunContextWrapper pattern for dual compatibility
-
-### v0.1.8
-- 🤖 OpenAI Agents SDK integration
-- 💬 Slack adapter with file handling
-- 🎯 ChatGPT-compatible tool requirements
 
 ---
 

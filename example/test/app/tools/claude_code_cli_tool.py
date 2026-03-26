@@ -9,8 +9,6 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List, Annotated
 from datetime import datetime
 from viyv_mcp import tool
-from viyv_mcp.run_context import RunContext
-from agents import RunContextWrapper
 from pydantic import Field
 from fastmcp import FastMCP
 import logging
@@ -232,7 +230,6 @@ def register(mcp: FastMCP):
 
     @tool(description="Claude CLIを使用したコード実行（--resumeサポート版）", tags={"claude", "cli", "code"})
     async def claude_cli(
-        wrapper: RunContextWrapper[RunContext],
         prompt: Annotated[
             str,
             Field(
@@ -300,7 +297,6 @@ def register(mcp: FastMCP):
     
     @tool(description="Claude CLIのセッション一覧を表示", tags={"claude", "cli", "session"})
     async def list_claude_cli_sessions(
-        wrapper: RunContextWrapper[RunContext],
         limit: Annotated[
             int,
             Field(

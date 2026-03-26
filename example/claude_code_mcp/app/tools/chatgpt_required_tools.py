@@ -4,8 +4,6 @@ ChatGPTとの接続のためのみに必要な最小限の実装
 """
 from typing import Dict, Any, Annotated
 from viyv_mcp import tool
-from viyv_mcp.run_context import RunContext
-from agents import RunContextWrapper
 from pydantic import Field
 from fastmcp import FastMCP
 import logging
@@ -21,7 +19,6 @@ def register(mcp: FastMCP):
         tags={"search", "chatgpt", "required"}
     )
     async def search(
-        wrapper: RunContextWrapper[RunContext],
         query: Annotated[
             str,
             Field(
@@ -55,7 +52,6 @@ def register(mcp: FastMCP):
         tags={"fetch", "chatgpt", "required"}
     )
     async def fetch(
-        wrapper: RunContextWrapper[RunContext],
         id: Annotated[
             str,
             Field(
