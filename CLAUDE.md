@@ -228,7 +228,7 @@ Optional dependencies:
 - The `@agent` decorator creates both a tool and registers it in the agent registry
 - Static files are served from the path configured in `STATIC_DIR`
 - All decorators work by finding the FastMCP instance from the call stack
-- The package is distributed on PyPI as `viyv_mcp` (current version: 0.1.21)
+- The package is distributed on PyPI as `viyv_mcp` (current version: 1.0.0)
 - Generated projects use `uv` for dependency management via `pyproject.toml`
 - The test/ directory contains working examples rather than unit tests - use these as reference implementations
 - External MCP servers are managed as child processes with stdio-based communication

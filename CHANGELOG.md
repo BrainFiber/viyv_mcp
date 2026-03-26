@@ -5,17 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.0] - 2026-03-27
+
+### Changed (Architecture)
+- **core.py decomposed**: God Object split into 3 focused modules
+  - `app/mcp_factory.py` — FastMCP creation + module auto-registration
+  - `app/asgi_builder.py` — WS bridge setup, security layer, route assembly
+  - `app/lifespan_composer.py` — composite lifespan management
+  - `core.py` reduced to thin ASGI facade (251→149 lines)
+- **decorators.py simplified**: Removed RunContextWrapper dead code (583→461 lines)
+  - Removed dual-function pattern (impl + _schema_stub) → single registration
+  - Removed v2 fallback path in `_collect_tools_map`
+  - `_wrap_callable_with_tools()` now only handles tools ContextVar injection
+- **bridge_manager.py hardened**: AsyncExitStack + timeout for safe process management
+  - 30s startup timeout, 10s shutdown timeout via `asyncio.wait_for`
+  - Per-bridge failure isolation (one failure doesn't affect others)
+  - Proper resource cleanup on partial initialization failure
+
+### Fixed
+- **Security initialization silent failure**: Previously, if security layer init failed, server ran unprotected with only a debug log. Now: ImportError (module absent) is info-logged; other errors are raised to prevent unprotected startup
+- **asyncio.run() bug in entry decorator**: `_wrap_factory_with_tools()` crashed with RuntimeError when called inside an already-running event loop
+- **@agent decorator missing error handling**: Added try/except for `_get_mcp_from_stack()` (matching @entry pattern)
+- **Security hook ImportError logged at wrong level**: Changed from debug to warning so production servers notice when tool metadata sync is broken
+
+### Added
+- **E2E architecture test suite**: 31 tests covering decorator registration, tool execution, security Observer, ViyvMCP assembly, new modules, bridge manager, MCP protocol compatibility
+- **Error handling in tool registration**: `mcp.tool()` failures now logged and handled gracefully
+- **_fire_tool_event() logging**: Hook failures now logged at warning level instead of silently swallowed
+- **Defensive null checks**: WS bridge callbacks guard against missing relay MCP
 
 ### Removed
 - **Slack Adapter** (`slack_adapter.py`): Moved out of core package. `slack-bolt` and `aiohttp` removed from hard dependencies (available as `pip install viyv_mcp[slack]`)
 - **OpenAI Agents SDK Bridge** (`openai_bridge.py`): Moved out of core package. `openai-agents` removed from hard dependencies (available as `pip install viyv_mcp[openai]`)
 - **RunContext** (`run_context.py`): Abstract base class removed (was only used by Slack Adapter)
+- **RunContextWrapper handling**: All dead code removed from decorators.py (~150 lines)
 - Slack/OpenAI-dependent template files and example agents
 
-## [Unreleased] - JWT Authentication & Access Control
-
-### Added
+### Security
 - **JWT Security Framework**: Complete authentication and authorization subsystem
   - `viyv_mcp/app/security/` — Clean Architecture (Domain / Infrastructure / Application / Interface)
   - FastMCP native middleware (`on_call_tool`, `on_list_tools`) works for both stdio and HTTP
@@ -23,17 +49,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - ContextVar-based identity bridge between transport layers
   - Observer pattern: `decorators.py` fires tool event hooks without depending on security package
 - **Namespace Access Control**: `@tool(namespace="hr")` — agents see only tools in their trusted namespaces
-  - `tools/list` filters by namespace; `tools/call` hides tool existence on namespace mismatch
 - **Security Level Enforcement**: `@tool(security_level="confidential")` — clearance rank check
-  - Default levels: public(0), internal(1), confidential(2), restricted(3); customizable via security.yaml
 - **Bridge Security Metadata**: `namespace`, `security_level`, `namespace_map`, `security_level_map` fields in bridge JSON configs
 - **Audit Logging**: Structured JSON audit log via Python logging (`viyv_mcp.security.audit`)
-  - Output to file (`VIYV_MCP_AUDIT_LOG`) or stderr
 - **CLI**: `python -m viyv_mcp generate-jwt` — generate signed JWTs for agent authentication
 - **Operating Modes**: bypass (dev), authenticated (JWT), deny_all (default safe)
-  - `VIYV_MCP_ENV=production` blocks bypass mode
-- **65 tests**: Unit tests (domain, infrastructure, service, registry) + E2E tests (FastMCP middleware chain + HTTP)
-- **Dependencies**: `PyJWT>=2.0` (core), `PyYAML>=6.0` (optional, for security.yaml)
 
 ## [0.1.21] - 2026-03-25
 
