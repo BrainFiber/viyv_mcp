@@ -123,7 +123,10 @@ def _register_tool_event_hook(registry: ToolSecurityRegistry) -> None:
     try:
         from viyv_mcp.decorators import add_tool_event_hook
     except ImportError:
-        logger.debug("Security: decorators.add_tool_event_hook not available — skipping hook")
+        logger.warning(
+            "Security: decorators.add_tool_event_hook not available — "
+            "tool security metadata will NOT be synchronized"
+        )
         return
 
     def _on_tool_event(event: str, tool_name: str, metadata: dict[str, Any] | None) -> None:

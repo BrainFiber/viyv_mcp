@@ -1,22 +1,23 @@
 # core.py
+"""ViyvMCP — Streamable HTTP + 静的配信 + エントリー群を 1 つにまとめる ASGI アプリ"""
 import logging
-import os
-import pathlib
-from contextlib import asynccontextmanager
-from starlette.applications import Starlette
-from starlette.routing import Mount
-from fastapi.staticfiles import StaticFiles
 
-from fastmcp import FastMCP                       # ← FastMCP 3.1+
+from starlette.applications import Starlette
+from fastmcp import FastMCP
+
 from viyv_mcp.app.lifespan import app_lifespan_context
-from viyv_mcp.app.registry import auto_register_modules
 from viyv_mcp.app.bridge_manager import init_bridges, close_bridges, unregister_bridged_tools
 from viyv_mcp.app.config import Config
-from viyv_mcp.app.entry_registry import list_entries
 from viyv_mcp.app.mcp_initialize_fix import monkey_patch_mcp_validation
-from viyv_mcp.app.ws_bridge import WebSocketBridgeHub, create_ws_bridge_app
-from viyv_mcp.app.relay_key_manager import RelayKeyManager, create_key_api
 from viyv_mcp.app.relay_mcp_handler import register_browser_tools_for_session
+from viyv_mcp.app.mcp_factory import create_mcp_server
+from viyv_mcp.app.asgi_builder import (
+    ensure_static_dir,
+    setup_ws_bridge,
+    apply_security,
+    build_routes,
+)
+from viyv_mcp.app.lifespan_composer import compose_lifespan
 
 logger = logging.getLogger(__name__)
 
@@ -29,55 +30,77 @@ class ViyvMCP:
         server_name: str = "My Streamable HTTP MCP Server",
         stateless_http: bool | None = None
     ) -> None:
-        # MCP初期化の互換性パッチを適用
         monkey_patch_mcp_validation()
 
         self.server_name = server_name
         self.stateless_http = stateless_http
         self._mcp: FastMCP | None = None
-        self._relay_mcp: FastMCP | None = None  # Browser-only MCP for relay
+        self._mcp_app = None
+        self._relay_mcp: FastMCP | None = None
         self._relay_mcp_app = None
-        self._ws_bridge_hub: WebSocketBridgeHub | None = None
-        self._ws_registered_tools: dict[str, list[str]] = {}  # key -> tool names
-        self._asgi_app = self._create_asgi_app()
+        self._ws_bridge_hub = None
+        self._ws_registered_tools: dict[str, list[str]] = {}
         self._bridges = None
+        self._asgi_app = self._assemble()
 
     # --------------------------------------------------------------------- #
-    #  FastMCP 本体                                                          #
+    #  WebSocket コールバック                                                 #
     # --------------------------------------------------------------------- #
-    def _create_mcp_server(self) -> FastMCP:
-        """FastMCP を生成してローカル modules を自動登録"""
-        mcp = FastMCP(self.server_name, lifespan=app_lifespan_context)
-
-        auto_register_modules(mcp, "app.tools")
-        auto_register_modules(mcp, "app.resources")
-        auto_register_modules(mcp, "app.prompts")
-        auto_register_modules(mcp, "app.agents")
-        auto_register_modules(mcp, "app.entries")
-
-        logger.info("ViyvMCP: MCP server created & local modules registered.")
-        return mcp
-
-    # --------------------------------------------------------------------- #
-    #  Starlette アプリ組み立て                                               #
-    # --------------------------------------------------------------------- #
-    def _create_asgi_app(self):
-        # --- MCP サブアプリ（Streamable HTTP） --------------------------- #
-        self._mcp = self._create_mcp_server()
-        # MCPアプリを生成（パスは / で、後でルーティング時に /mcp を処理）
-        self._mcp_app = self._mcp.http_app(
-            path="/",
-            stateless_http=self.stateless_http
-        )          # Streamable HTTP
-
-        # --- 静的ファイル ------------------------------------------------- #
-        STATIC_DIR = os.getenv(
-            "STATIC_DIR",
-            os.path.join(os.getcwd(), "static", "images"),
+    def _on_ws_connect(self, key: str, session):
+        """WS 接続時 — relay MCP にブラウザツール登録"""
+        if not self._relay_mcp:
+            logger.warning("[ws-bridge] Relay MCP not available, skipping tool registration")
+            return
+        tool_names = register_browser_tools_for_session(
+            self._relay_mcp, session, tags={'browser', 'relay'},
         )
-        pathlib.Path(STATIC_DIR).mkdir(parents=True, exist_ok=True)
+        self._ws_registered_tools[key] = tool_names
+        logger.info(
+            f"[ws-bridge:{session.key_prefix}] "
+            f"Registered {len(tool_names)} browser tools on relay MCP"
+        )
 
-        # --- 外部 MCP ブリッジ ------------------------------------------- #
+    def _on_ws_disconnect(self, key: str, session):
+        """WS 切断時 — ブラウザツール登録解除"""
+        tool_names = self._ws_registered_tools.pop(key, [])
+        if tool_names and self._relay_mcp:
+            unregister_bridged_tools(self._relay_mcp, tool_names)
+            logger.info(
+                f"[ws-bridge:{session.key_prefix}] "
+                f"Unregistered {len(tool_names)} browser tools from relay MCP"
+            )
+
+    # --------------------------------------------------------------------- #
+    #  ASGI アプリ組み立て                                                     #
+    # --------------------------------------------------------------------- #
+    def _assemble(self):
+        # 1. MCP サーバー生成
+        self._mcp = create_mcp_server(self.server_name, app_lifespan_context)
+        self._mcp_app = self._mcp.http_app(
+            path="/", stateless_http=self.stateless_http,
+        )
+
+        # 2. 静的ファイル
+        static_dir = ensure_static_dir()
+
+        # 3. WebSocket ブリッジ
+        ws = setup_ws_bridge(
+            self.server_name,
+            self.stateless_http,
+            on_connect=self._on_ws_connect,
+            on_disconnect=self._on_ws_disconnect,
+        )
+        self._relay_mcp = ws.relay_mcp
+        self._relay_mcp_app = ws.relay_mcp_app
+        self._ws_bridge_hub = ws.ws_bridge_hub
+
+        # 4. セキュリティ
+        self._mcp_app, self._relay_mcp_app = apply_security(
+            self._mcp, self._mcp_app,
+            self._relay_mcp, self._relay_mcp_app,
+        )
+
+        # 5. ブリッジ startup/shutdown
         async def bridges_startup():
             logger.info("=== ViyvMCP startup: bridging external MCP servers ===")
             self._bridges = await init_bridges(self._mcp, Config.BRIDGE_CONFIG_DIR)
@@ -87,143 +110,27 @@ class ViyvMCP:
             if self._bridges:
                 await close_bridges(self._bridges)
 
-        # --- WebSocket ブリッジ --------------------------------------------- #
-        if Config.WS_BRIDGE_ENABLED:
-            key_manager = RelayKeyManager(
-                ttl_hours=Config.RELAY_KEY_TTL_HOURS,
-                storage_path=Config.RELAY_KEY_STORAGE,
-            )
-
-            # Relay-only MCP: serves only browser tools at /relay/mcp
-            self._relay_mcp = FastMCP(f"{self.server_name} (Relay)")
-            self._relay_mcp_app = self._relay_mcp.http_app(
-                path="/",
-                stateless_http=self.stateless_http,
-            )
-
-            def _on_ws_connect(key: str, session):
-                """Register browser tools on relay-only MCP."""
-                tool_names = register_browser_tools_for_session(
-                    self._relay_mcp, session, tags={'browser', 'relay'},
-                )
-                self._ws_registered_tools[key] = tool_names
-                logger.info(
-                    f"[ws-bridge:{session.key_prefix}] "
-                    f"Registered {len(tool_names)} browser tools on relay MCP"
-                )
-
-            def _on_ws_disconnect(key: str, session):
-                """Unregister browser tools from relay-only MCP."""
-                tool_names = self._ws_registered_tools.pop(key, [])
-                if tool_names:
-                    unregister_bridged_tools(self._relay_mcp, tool_names)
-                    logger.info(
-                        f"[ws-bridge:{session.key_prefix}] "
-                        f"Unregistered {len(tool_names)} browser tools from relay MCP"
-                    )
-
-            self._ws_bridge_hub = WebSocketBridgeHub(
-                key_manager,
-                on_connect=_on_ws_connect,
-                on_disconnect=_on_ws_disconnect,
-            )
-            ws_bridge_app = create_ws_bridge_app(self._ws_bridge_hub)
-            logger.info("ViyvMCP: WebSocket bridge enabled (relay MCP at /relay/mcp)")
-        else:
-            key_manager = None
-            logger.info("ViyvMCP: WebSocket bridge disabled")
-
-        # --- セキュリティレイヤー ------------------------------------------- #
-        try:
-            from viyv_mcp.app.security import create_security_layer
-
-            security = create_security_layer()
-            if security:
-                # FastMCP middleware (stdio + HTTP 共通)
-                self._mcp.add_middleware(security.middleware)
-                if self._relay_mcp:
-                    self._relay_mcp.add_middleware(security.middleware)
-
-                # ASGI JWT extractor (HTTP のみ)
-                self._mcp_app = security.wrap_asgi(self._mcp_app)
-                if self._relay_mcp_app:
-                    self._relay_mcp_app = security.wrap_asgi(self._relay_mcp_app)
-
-                logger.info("ViyvMCP: Security layer active")
-        except Exception as exc:
-            # SecurityLayer が SystemExit を raise する場合はそのまま再送出
-            if isinstance(exc, SystemExit):
-                raise
-            logger.debug(f"ViyvMCP: Security layer not loaded — {exc}")
-
-        # --- その他のルートのためのStarletteアプリ ------------------------- #
-        routes = [
-            Mount(path, app=factory() if callable(factory) else factory)
-            for path, factory in list_entries()
-        ]
-
-        # WebSocket bridge routes
-        if Config.WS_BRIDGE_ENABLED and key_manager:
-            routes.append(Mount("/ws/bridge", app=ws_bridge_app))
-            routes.append(Mount("/relay", routes=create_key_api(key_manager)))
-
-        routes.append(
-            Mount(
-                "/static",
-                app=StaticFiles(directory=os.path.dirname(STATIC_DIR), html=False),
-                name="static",
-            )
+        # 6. 複合 lifespan
+        lifespan = compose_lifespan(
+            self._mcp_app, self._relay_mcp_app,
+            bridges_startup, bridges_shutdown,
+            self._ws_bridge_hub,
         )
 
-        # --- 複合 lifespan ------------------------------------------------ #
-        @asynccontextmanager
-        async def _noop_lifespan(a):
-            yield
-
-        try:
-            mcp_lifespan = self._mcp_app.router.lifespan_context
-        except AttributeError:
-            logger.warning("MCP app router lifespan not found, using no-op")
-            mcp_lifespan = _noop_lifespan
-
-        # Relay MCP lifespan (needed for StreamableHTTPSessionManager)
-        try:
-            relay_lifespan = self._relay_mcp_app.router.lifespan_context if self._relay_mcp_app else None
-        except AttributeError:
-            relay_lifespan = None
-
-        @asynccontextmanager
-        async def lifespan(app):
-            # ① MCP 側の session/lifespan を起動
-            async with mcp_lifespan(app):
-                # ①b Relay MCP の lifespan も起動
-                relay_ctx = relay_lifespan(app) if relay_lifespan else _noop_lifespan(app)
-                async with relay_ctx:
-                    # ② 外部ブリッジなど自前初期化
-                    await bridges_startup()
-                    try:
-                        yield
-                    finally:
-                        # Close all WS bridge sessions
-                        if self._ws_bridge_hub:
-                            for key, session in list(self._ws_bridge_hub.sessions.items()):
-                                await session.close()
-                            logger.info("ViyvMCP: WebSocket bridge sessions closed")
-                        await bridges_shutdown()
-
+        # 7. ルート + Starlette
+        routes = build_routes(ws.ws_routes, static_dir)
         self._starlette_app = Starlette(routes=routes, lifespan=lifespan)
 
-        # カスタムASGIルーターを返す
         return self
 
     # --------------------------------------------------------------------- #
-    #  ASGI エントリポイント                                                 #
+    #  ASGI エントリポイント                                                   #
     # --------------------------------------------------------------------- #
     def get_app(self):
         return self._asgi_app
 
     async def __call__(self, scope, receive, send):
-        """カスタムASGIルーター: /mcpパスを直接MCPアプリに、それ以外をStarletteに"""
+        """カスタム ASGI ルーター: /mcp パスを直接 MCP アプリに、それ以外を Starlette に"""
         path = scope.get("path", "")
 
         # /relay/mcp → Relay-only MCP (browser tools only)
@@ -242,5 +149,5 @@ class ViyvMCP:
             scope["raw_path"] = new_path.encode()
             return await self._mcp_app(scope, receive, send)
 
-        # その他のパスはStarletteアプリに
+        # その他のパスは Starlette アプリに
         return await self._starlette_app(scope, receive, send)

@@ -1,16 +1,25 @@
 # File: app/bridge_manager.py
 
+import asyncio
 import os
 import json
 import glob
 import logging
 import pathlib
+from contextlib import AsyncExitStack
 from typing import List, Tuple, Set
 
 from mcp import ClientSession, types
 from mcp.client.stdio import stdio_client, StdioServerParameters
 from fastmcp import FastMCP
 import inspect
+
+# タイムアウト定数
+BRIDGE_STARTUP_TIMEOUT = 30   # seconds: 外部 MCP サーバー起動 + initialize の上限
+BRIDGE_SHUTDOWN_TIMEOUT = 10  # seconds: シャットダウンの上限
+
+# 内部型
+BridgeHandle = Tuple[str, AsyncExitStack, ClientSession]
 
 logger = logging.getLogger(__name__)
 
@@ -63,13 +72,13 @@ def _get_resource_uri(resource: types.Resource) -> str:
 async def init_bridges(
     mcp: FastMCP,
     config_dir: str,
-) -> List[Tuple[str, "stdio_client", ClientSession]]:
+) -> List[BridgeHandle]:
     """
     config_dir/*.json を走査し、外部 MCP サーバー(stdio)を起動して
     list_tools / list_resources / list_prompts を取得し、FastMCP に動的登録。
-    戻り値: [(server_name, stdio_ctx, session), ...]
+    戻り値: [(server_name, exit_stack, session), ...]
     """
-    bridges: List[Tuple[str, "stdio_client", ClientSession]] = []
+    bridges: List[BridgeHandle] = []
 
     for cfg_file in glob.glob(os.path.join(config_dir, "*.json")):
         try:
@@ -107,13 +116,33 @@ async def init_bridges(
 
         server_params = StdioServerParameters(command=cmd, args=args, env=env_merged or None, cwd=cwd)
 
-        # --- プロセス / セッション確立 ------------------------------------------------
-        stdio_ctx = stdio_client(server_params)
-        read_stream, write_stream = await stdio_ctx.__aenter__()
+        # --- プロセス / セッション確立 (AsyncExitStack + タイムアウト) -------
+        exit_stack = AsyncExitStack()
+        try:
+            async def _start_bridge():
+                read_stream, write_stream = await exit_stack.enter_async_context(
+                    stdio_client(server_params)
+                )
+                session = await exit_stack.enter_async_context(
+                    ClientSession(read_stream, write_stream)
+                )
+                await session.initialize()
+                return session
 
-        session = ClientSession(read_stream, write_stream)
-        await session.__aenter__()
-        await session.initialize()
+            session = await asyncio.wait_for(
+                _start_bridge(), timeout=BRIDGE_STARTUP_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            logger.error(
+                f"[{name}] Startup timed out after {BRIDGE_STARTUP_TIMEOUT}s, skipping"
+            )
+            await exit_stack.aclose()
+            continue
+        except Exception as e:
+            logger.error(f"[{name}] Startup failed: {e}, cleaning up")
+            await exit_stack.aclose()
+            continue
+
         logger.info(f"[{name}] MCP initialize() done")
 
         # ----------------------- Tools ----------------------------------------------
@@ -139,28 +168,28 @@ async def init_bridges(
         if prompts:
             logger.info(f"[{name}] Prompts => {[p.name for p in prompts]}")
 
-        bridges.append((name, stdio_ctx, session))
+        bridges.append((name, exit_stack, session))
 
     return bridges
 
 
-async def close_bridges(bridges: List[Tuple[str, "stdio_client", ClientSession]]):
+async def close_bridges(bridges: List[BridgeHandle]):
     """
-    init_bridges()で起動したサブプロセス/セッションを全て終了
+    init_bridges() で起動したサブプロセス/セッションを全て終了。
+    AsyncExitStack.aclose() が session → stdio の順にクリーンアップする。
     """
-    for (name, stdio_ctx, session) in bridges:
+    for (name, exit_stack, session) in bridges:
         logger.info(f"=== Shutting down external MCP server '{name}' ===")
-        # session.__aexit__
         try:
-            await session.__aexit__(None, None, None)
+            await asyncio.wait_for(
+                exit_stack.aclose(), timeout=BRIDGE_SHUTDOWN_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            logger.error(
+                f"[{name}] Shutdown timed out after {BRIDGE_SHUTDOWN_TIMEOUT}s"
+            )
         except Exception as e:
-            logger.error(f"[{name}] session close error: {e}")
-
-        # subprocess __aexit__
-        try:
-            await stdio_ctx.__aexit__(None, None, None)
-        except Exception as e:
-            logger.error(f"[{name}] process close error: {e}")
+            logger.error(f"[{name}] Shutdown error: {e}")
 
 
 # ----------------------------------------------------------------------------

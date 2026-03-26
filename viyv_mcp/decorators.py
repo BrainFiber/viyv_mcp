@@ -1,9 +1,8 @@
 # decorators.py
 # Decorators wrapping mcp decorators
-import asyncio, functools, inspect
+import asyncio, functools, inspect, logging
 from typing import (
     Any, Callable, Dict, Iterable, Optional, Union, Set,
-    get_origin, get_args, Annotated            # ←★ add
 )
 
 from starlette.types import ASGIApp
@@ -16,10 +15,7 @@ from viyv_mcp.agent_runtime import (
     reset_tools as _rt_reset_tools,
 )
 
-try:                                         
-    from agents import RunContextWrapper
-except ImportError:
-    RunContextWrapper = None
+logger = logging.getLogger(__name__)
 
 # --------------------------------------------------------------------------- #
 # ツール関数レジストリ（v3 で Tool.fn が非公開になったことへの対応）            #
@@ -56,8 +52,8 @@ def _fire_tool_event(event: str, tool_name: str, metadata: dict | None = None) -
     for hook in _tool_event_hooks:
         try:
             hook(event, tool_name, metadata)
-        except Exception:
-            pass  # hooks must not break registration
+        except Exception as e:
+            logger.warning(f"Tool event hook failed for '{tool_name}': {e}")
 
 
 # --------------------------------------------------------------------------- #
@@ -158,28 +154,7 @@ async def _collect_tools_map(
             _sync_wrapper.__doc__ = local_fn.__doc__ or (info.description if info else "")
             return _sync_wrapper
 
-        # 2. v2互換: Tool.fn がある場合のフォールバック
-        if info and getattr(info, "fn", None):
-            local_fn = getattr(info.fn, "__original_tool_fn__", info.fn)
-            sig = inspect.signature(local_fn)
-
-            if inspect.iscoroutinefunction(local_fn):
-
-                async def _async_wrapper_v2(**kw):
-                    return await local_fn(**kw)
-
-                _async_wrapper_v2.__signature__ = sig  # type: ignore[attr-defined]
-                _async_wrapper_v2.__doc__ = local_fn.__doc__ or info.description
-                return _async_wrapper_v2
-
-            async def _sync_wrapper_v2(**kw):
-                return local_fn(**kw)
-
-            _sync_wrapper_v2.__signature__ = sig      # type: ignore[attr-defined]
-            _sync_wrapper_v2.__doc__ = local_fn.__doc__ or info.description
-            return _sync_wrapper_v2
-
-        # 3. RPC 経由（ブリッジツール等）
+        # 2. RPC 経由（ブリッジツール等）
         if hasattr(mcp, "call_tool"):
 
             async def _rpc(**kw):
@@ -235,61 +210,23 @@ def _dynamic_tools_middleware(
     return _wrapper
 
 
-
 def _wrap_callable_with_tools(
     fn: Callable[..., Any],
     mcp: FastMCP,
     **collect_kwargs,
 ) -> Callable[..., Any]:
     """
-    tools_map を ContextVar に流し込み、wrapper (RunContextWrapper[...]) を
-    Agents SDK へ渡しつつ、FastMCP 側の JSON-Schema 生成エラーを回避するラッパ。
+    tools_map を ContextVar に流し込むラッパ。
+    関数シグネチャに ``tools`` パラメータがあれば自動注入する。
     """
+    _wants_tools = "tools" in inspect.signature(fn).parameters
 
-    # ---------- RunContextWrapper 判定 ----------------------------------
-    def _is_wrapper(param: inspect.Parameter) -> bool:
-        if RunContextWrapper is None:
-            return False
-        ann = param.annotation
-        if ann is inspect._empty:
-            return False
-
-        if get_origin(ann) is Annotated:            # Annotated[RCW[…], …] を剥がす
-            ann = get_args(ann)[0]
-
-        if ann is RunContextWrapper or get_origin(ann) is RunContextWrapper:
-            return True
-        if get_origin(ann) is Union:
-            return any(
-                a is RunContextWrapper or get_origin(a) is RunContextWrapper
-                for a in get_args(ann)
-            )
-        return False
-
-    # ---------- ラッパ本体 ----------------------------------------------
     async def _impl(*args, **kwargs):
         tools_map = await _collect_tools_map(mcp, **collect_kwargs)
         token = _rt_set_tools(tools_map)
         try:
-            if "tools" in inspect.signature(fn).parameters:
+            if _wants_tools:
                 kwargs["tools"] = tools_map
-            
-            # wrapperパラメータが存在する場合、RunContextWrapperインスタンスを作成
-            fn_sig = inspect.signature(fn)
-            if any(_is_wrapper(p) for p in fn_sig.parameters.values()):
-                # RunContextWrapperのインスタンスを作成
-                if RunContextWrapper is not None:
-                    wrapper_instance = RunContextWrapper(None)  # type: ignore
-                    # 最初の引数として追加
-                    if args:
-                        args = (wrapper_instance,) + args
-                    else:
-                        # または kwargs に追加
-                        for param_name, param in fn_sig.parameters.items():
-                            if _is_wrapper(param):
-                                kwargs[param_name] = wrapper_instance
-                                break
-            
             return (
                 await fn(*args, **kwargs)
                 if inspect.iscoroutinefunction(fn)
@@ -300,30 +237,17 @@ def _wrap_callable_with_tools(
 
     functools.update_wrapper(_impl, fn)
 
-    # ---------- シグネチャ再構築 ----------------------------------------
-    orig_sig = inspect.signature(fn)
-
-    # 1) wrapper パラメータを作成
-    wrapper_ann = RunContextWrapper if RunContextWrapper else Any
-    wrapper_param = inspect.Parameter(
-        name="wrapper",
-        kind=inspect.Parameter.POSITIONAL_OR_KEYWORD,
-        annotation=wrapper_ann,
-        default=inspect._empty,                     # 必須扱い
-    )
-
-    # 2) 元関数のパラメータ（wrapper は除外）
-    other_params = [
-        p for p in orig_sig.parameters.values() if not _is_wrapper(p)
-    ]
-
-    # 3) 新しいシグネチャ  (wrapper を先頭に)
-    _impl.__signature__ = inspect.Signature([wrapper_param] + other_params)  # type: ignore[attr-defined]
+    # tools パラメータはフレームワーク注入なので外部シグネチャから除外
+    if _wants_tools:
+        orig_sig = inspect.signature(fn)
+        _impl.__signature__ = inspect.Signature(
+            [p for p in orig_sig.parameters.values() if p.name != "tools"]
+        )
 
     return _impl
 
 
-def _wrap_factory_with_tools(                        # ← 差し替え
+def _wrap_factory_with_tools(
     factory: Callable[..., ASGIApp],
     mcp: FastMCP,
     **collect_kwargs,
@@ -333,7 +257,13 @@ def _wrap_factory_with_tools(                        # ← 差し替え
     wants_tools = "tools" in inspect.signature(factory).parameters
 
     def _factory_wrapper(*args, **kwargs):
-        init_tools_map = asyncio.run(_collect_tools_map(mcp, **collect_kwargs))
+        try:
+            asyncio.get_running_loop()
+            # 既に event loop 内 → 初期ツールマップはミドルウェアで遅延取得
+            init_tools_map = {}
+        except RuntimeError:
+            init_tools_map = asyncio.run(_collect_tools_map(mcp, **collect_kwargs))
+
         if wants_tools:
             kwargs["tools"] = init_tools_map
 
@@ -357,73 +287,37 @@ def tool(
     namespace: str | None = None,          # Security: tool namespace
     security_level: str | None = None,     # Security: required clearance
 ):
-    """
-    * wrapper (RunContextWrapper) を **Agents 実行時** だけ受け取りたい。
-    * FastMCP に登録するときは JSON-Schema 生成を壊さないよう
-      wrapper をシグネチャから外したダミーを登録する。
-    """
+    """ツールを FastMCP に登録するデコレータ。"""
 
     def decorator(fn: Callable[..., Any]):
         mcp = _get_mcp_from_stack()
         tool_name = name or fn.__name__
         tool_desc = description or (fn.__doc__ or f"Viyv tool '{tool_name}'")
 
-        # 1) Agents 実行用：wrapper を先頭に差し込む
-        impl = _wrap_callable_with_tools(fn, mcp)   # ← wrapper 必須で返る
+        # ContextVar 注入ラッパ
+        impl = _wrap_callable_with_tools(fn, mcp)
 
         # ツール関数レジストリに登録（v3 で Tool.fn が非公開のため）
         _register_tool_fn(tool_name, impl)
 
-        # 2) FastMCP / JSON-Schema 用：wrapper を除いたダミー関数
-        async def _schema_stub(*args, **kwargs):
-            # → そのまま本体を呼び出すだけ
-            return await impl(*args, **kwargs) if inspect.iscoroutinefunction(impl) else impl(*args, **kwargs)
-
-        #   シグネチャから wrapper を削除
-        orig_sig = inspect.signature(impl)
-        params_no_wrapper = [
-            inspect.Parameter(
-                p.name,
-                kind=inspect.Parameter.KEYWORD_ONLY,
-                annotation=p.annotation,
-                default=p.default,
-            )
-            for p in orig_sig.parameters.values()
-            if p.name != "wrapper"
-        ]
-        _schema_stub.__signature__ = inspect.Signature(params_no_wrapper)  # type: ignore[attr-defined]
-
-        # ── ★ ここが今回の追加ポイント ★ ──────────────────────────────
-        # get_type_hints() が参照する __annotations__ を補完
-        _schema_stub.__annotations__ = {
-            p.name: p.annotation
-            for p in params_no_wrapper
-            if p.annotation is not inspect._empty
-        }
-        # 戻り値型があればコピー
-        if orig_sig.return_annotation is not inspect._empty:
-            _schema_stub.__annotations__["return"] = orig_sig.return_annotation
-        # ──────────────────────────────────────────────────────────────────
-
-        _schema_stub.__doc__ = tool_desc
-        #   Agents から参照できるよう実体を保持
-        _schema_stub.__original_tool_fn__ = impl       # ← ここがポイント
-
-        # ── メタデータ構築 (group のみ _meta に含める) ──────────────────
+        # メタデータ構築 (group のみ _meta に含める)
         meta_data = None
         if group:
             meta_data = {"viyv": {"group": group}}
-        # ─────────────────────────────────────────────────────────────────
 
-        # 3) FastMCP に登録（JSON-Schema 生成は stub を見る）
-        mcp.tool(
-            name=tool_name,
-            description=tool_desc,
-            tags=tags,
-            meta=meta_data,
-        )(_schema_stub)
+        # FastMCP に登録
+        try:
+            mcp.tool(
+                name=tool_name,
+                description=tool_desc,
+                tags=tags,
+                meta=meta_data,
+            )(impl)
+        except Exception as e:
+            logger.error(f"Failed to register tool '{tool_name}': {e}")
+            return fn
 
-        # 4) ツール登録イベント通知 (security パッケージが Observer で受信)
+        # ツール登録イベント通知 (security パッケージが Observer で受信)
         _fire_tool_event("registered", tool_name, {
             "namespace": namespace,
             "security_level": security_level,
@@ -522,57 +416,41 @@ def agent(
     )
 
     def decorator(fn: Callable[..., Any]):
-        mcp = _get_mcp_from_stack()
+        try:
+            mcp = _get_mcp_from_stack()
+        except RuntimeError:
+            logger.warning(
+                f"FastMCP not found in stack for agent '{name or fn.__name__}'"
+            )
+            return fn
+
         tool_name = name or fn.__name__
         tool_desc = description or (fn.__doc__ or "Viyv Agent")
 
-        # --- 実体（wrapper 混入版） ----------
+        # ContextVar 注入ラッパ (ツールフィルタ付き)
         _agent_impl = _wrap_callable_with_tools(fn, mcp, **collect_kwargs)
         _agent_impl.__viyv_agent__ = True
 
-        # ツール関数レジストリに登録（v3 で Tool.fn が非公開のため）
+        # ツール関数レジストリに登録
         _register_tool_fn(tool_name, _agent_impl)
 
-        # --- JSON-Schema 生成用スタブ ----------
-        async def _schema_stub(*args, **kwargs):
-            # wrapper を受け取らないダミー
-            return await _agent_impl(*args, **kwargs)
-
-        orig_sig = inspect.signature(_agent_impl)
-        params_no_wrapper = [
-            inspect.Parameter(
-                p.name,
-                kind=inspect.Parameter.KEYWORD_ONLY,
-                annotation=p.annotation,
-                default=p.default,
-            )
-            for p in orig_sig.parameters.values()
-            if p.name != "wrapper"
-        ]
-        _schema_stub.__signature__ = inspect.Signature(params_no_wrapper)  # type: ignore[attr-defined]
-        _schema_stub.__annotations__ = {
-            p.name: p.annotation
-            for p in params_no_wrapper
-            if p.annotation is not inspect._empty
-        }
-        if orig_sig.return_annotation is not inspect._empty:
-            _schema_stub.__annotations__["return"] = orig_sig.return_annotation
-        _schema_stub.__doc__ = tool_desc
-        _schema_stub.__original_tool_fn__ = _agent_impl
-
-        # ── メタデータ構築 ──
+        # メタデータ構築
         meta_data = None
         if group:
             meta_data = {"viyv": {"group": group}}
 
-        # --- FastMCP 登録 --------------------
-        mcp.tool(
-            name=tool_name,
-            description=tool_desc,
-            meta=meta_data,
-        )(_schema_stub)
+        # FastMCP 登録
+        try:
+            mcp.tool(
+                name=tool_name,
+                description=tool_desc,
+                meta=meta_data,
+            )(_agent_impl)
+        except Exception as e:
+            logger.error(f"Failed to register agent '{tool_name}': {e}")
+            return fn
 
-        # --- ツール登録イベント通知 ----------
+        # ツール登録イベント通知
         _fire_tool_event("registered", tool_name, {
             "namespace": namespace,
             "security_level": security_level,
