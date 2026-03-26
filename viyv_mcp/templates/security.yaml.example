@@ -1,0 +1,26 @@
+# Security configuration for viyv_mcp
+# Copy to security.yaml and customize. All values can be overridden by env vars.
+#
+# Environment variables:
+#   VIYV_MCP_AUTH        - "bypass" for dev (or omit to auto-detect)
+#   VIYV_MCP_JWT_SECRET  - HS256 shared secret (required for authenticated mode)
+#   VIYV_MCP_JWT         - JWT token for stdio authentication
+#   VIYV_MCP_ENV         - "production" blocks bypass mode
+#   VIYV_MCP_AUDIT_LOG   - Path to audit log file (JSONL)
+
+# Security levels (customize ranks as needed)
+security_levels:
+  - name: public
+    rank: 0
+  - name: internal
+    rank: 1
+  - name: confidential
+    rank: 2
+  - name: restricted
+    rank: 3
+
+# When true, all agents implicitly trust the "common" namespace
+implicit_trust_common: true
+
+# Optional: audit log file path (defaults to stderr)
+# audit_log_path: logs/audit.jsonl

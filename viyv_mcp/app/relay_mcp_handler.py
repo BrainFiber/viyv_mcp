@@ -70,6 +70,10 @@ BROWSER_TOOLS = [
                     'maximum': 100,
                     'description': 'JPEG quality (default: 80)',
                 },
+                'fullPage': {
+                    'type': 'boolean',
+                    'description': 'Capture full scrollable page (default: false). Ignored if ref or region is provided.',
+                },
             },
             'required': ['tabId'],
         },
@@ -616,7 +620,10 @@ def register_browser_tools_for_session(
             description=tool_def.get('description', ''),
             inputSchema=tool_def.get('inputSchema', {}),
         )
-        _register_tool_bridge(mcp, session, tool_info, tag_set, 'Browser')
+        _register_tool_bridge(
+            mcp, session, tool_info, tag_set, 'Browser',
+            cfg_namespace='browser', cfg_security_level='internal',
+        )
         registered.append(tool_def['name'])
 
     logger.info(f"[relay:{session.key_prefix}] Registered {len(registered)} browser tools")

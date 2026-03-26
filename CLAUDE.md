@@ -77,6 +77,18 @@ STATELESS_HTTP=true uv run gunicorn test_app:app -w 4 -k uvicorn.workers.Uvicorn
     - `mcp_initialize_fix.py` - Pydantic v2 compatibility patches for MCP protocol
     - `lifespan.py` - Application lifespan management
     - `adapters/slack_adapter.py` - Slack event handling and integration
+    - `security/` - JWT authentication and access control subsystem
+      - `domain/models.py` - AgentIdentity, ToolSecurityMeta, AuthResult, AuthMode
+      - `domain/policy.py` - Pure authorization functions (namespace, clearance)
+      - `infrastructure/jwt_codec.py` - PyJWT encode/decode wrapper
+      - `infrastructure/config_loader.py` - SecurityConfig (Pydantic), YAML + env var
+      - `infrastructure/audit_writer.py` - Structured JSON audit logging
+      - `service.py` - SecurityService (authentication, authorization, audit orchestration)
+      - `tool_registry.py` - ToolSecurityRegistry (thread-safe metadata store)
+      - `context.py` - ContextVar for agent identity (stdio/HTTP bridge)
+      - `fastmcp_middleware.py` - FastMCP Middleware (on_call_tool, on_list_tools)
+      - `asgi_jwt_extractor.py` - ASGI middleware for HTTP JWT extraction
+  - `__main__.py` - CLI for `python -m viyv_mcp generate-jwt`
   - `templates/` - Project template files
 
 ### Key Design Patterns
@@ -97,6 +109,10 @@ STATELESS_HTTP=true uv run gunicorn test_app:app -w 4 -k uvicorn.workers.Uvicorn
 
 8. **Stateless HTTP Support**: New feature (v0.1.10) that enables stateless HTTP connections for multi-worker deployments. When enabled, session IDs are not required for MCP requests.
 
+9. **JWT Security (ContextVar + FastMCP Middleware hybrid)**: Agent identity established via JWT, enforced at FastMCP middleware level (works for both stdio and HTTP). ASGI middleware extracts JWT from HTTP Authorization headers and stores in ContextVar. For stdio, JWT is validated once at startup. Namespace controls tool visibility (tools/list filtering), security_level controls tool executability (tools/call clearance check).
+
+10. **Observer Pattern for Tool Metadata**: `decorators.py` fires `_fire_tool_event("registered", ...)` hooks without depending on the security package. The security `__init__.py` registers a hook to populate `ToolSecurityRegistry`. This avoids circular dependencies between core and security modules.
+
 ### Code Examples
 
 #### Creating a Tool
@@ -113,6 +129,18 @@ def register(mcp: FastMCP):
         b: int
     ) -> int:
         return a + b
+
+    # Tool with security metadata
+    @tool(
+        description="Query employee salary",
+        namespace="hr",                 # Visible only to agents with hr namespace
+        security_level="confidential",  # Requires confidential or higher clearance
+    )
+    def query_salary(
+        wrapper: RunContextWrapper[RunContext],
+        employee_id: str,
+    ) -> str:
+        return f"Salary for {employee_id}: $100,000"
 ```
 
 #### Creating an Agent
@@ -149,8 +177,12 @@ Create JSON files in `app/mcp_server_configs/`:
   "env": {
     "API_KEY": "$API_KEY"
   },
-  "cwd": "/path/to/working/directory",  // Optional: working directory
-  "tags": ["filesystem", "git"]          // Optional: tags for filtering
+  "cwd": "/path/to/working/directory",
+  "tags": ["filesystem", "git"],
+  "namespace": "hr",
+  "security_level": "confidential",
+  "namespace_map": { "public_stats": "common" },
+  "security_level_map": { "update_salary": "restricted" }
 }
 ```
 
@@ -175,6 +207,7 @@ Create JSON files in `app/mcp_server_configs/`:
 
 ## Environment Variables
 
+### Server
 - `HOST` - Server host (default: 127.0.0.1)
 - `PORT` - Server port (default: 8000)
 - `BRIDGE_CONFIG_DIR` - Directory for MCP server configs (default: app/mcp_server_configs)
@@ -185,16 +218,40 @@ Create JSON files in `app/mcp_server_configs/`:
   - When True: Session IDs are not required for MCP requests
   - When False: Session management is enabled (default FastMCP behavior)
 
+### Security (JWT Authentication & Access Control)
+- `VIYV_MCP_AUTH` - Security mode: "bypass" (no checks), or omit to auto-detect
+  - If `VIYV_MCP_JWT_SECRET` is set → authenticated mode
+  - If neither `VIYV_MCP_AUTH` nor `VIYV_MCP_JWT_SECRET` is set → deny_all mode
+  - bypass mode logs a warning at startup and is blocked when `VIYV_MCP_ENV=production`
+- `VIYV_MCP_JWT_SECRET` - HS256 shared secret for JWT validation (required for authenticated mode)
+- `VIYV_MCP_JWT` - JWT token for stdio authentication (validated once at startup, process-scoped)
+- `VIYV_MCP_ENV` - Set to "production" to block bypass mode
+- `VIYV_MCP_AUDIT_LOG` - Path to audit log file (JSONL format); defaults to stderr
+- `VIYV_SECURITY_CONFIG` - Path to security.yaml config file (default: security.yaml, optional)
+
 ## Testing Approach
 
-The repository includes a `test/` directory with sample implementations rather than unit tests. Test new functionality by:
+The repository has two testing approaches:
+
+### Unit & E2E tests (pytest)
+```bash
+pytest test/test_security/ -v   # Security subsystem: 65 tests
+```
+The `test/test_security/` directory contains comprehensive tests:
+- `test_domain/` - Pure policy and model tests (no mocks)
+- `test_infrastructure/` - JWT codec, config loader tests
+- `test_service.py` - SecurityService integration tests
+- `test_e2e.py` - End-to-end tests through FastMCP middleware chain + HTTP
+
+### Manual / example testing
+The `example/` directory contains sample implementations. Test new functionality by:
 1. Adding sample implementations in the test project
 2. Running the server with `uv run python main.py`
 3. Testing endpoints manually or with tools like curl/httpie
 
 ## Package Dependencies
 Core dependencies include:
-- `fastmcp>=2.12.3` - MCP protocol implementation (recently upgraded for better compatibility)
+- `fastmcp>=3.1.0` - MCP protocol implementation
 - `starlette>=0.25.0` - ASGI framework
 - `uvicorn>=0.22.0` - ASGI server
 - `slack-bolt>=1.23.0` - Slack integration
@@ -202,6 +259,10 @@ Core dependencies include:
 - `pytest>=7.0` - Testing framework
 - `pydantic>=2` - Data validation (v2 compatibility focus)
 - `aiohttp>=3.11.18` - Async HTTP client
+- `PyJWT>=2.0` - JWT token encoding/decoding for security
+
+Optional dependencies:
+- `PyYAML>=6.0` - For security.yaml config file support (`pip install 'viyv_mcp[security]'`)
 
 ## Important Notes
 
@@ -210,7 +271,7 @@ Core dependencies include:
 - The `@agent` decorator creates both a tool and registers it in the agent registry
 - Static files are served from the path configured in `STATIC_DIR`
 - All decorators work by finding the FastMCP instance from the call stack
-- The package is distributed on PyPI as `viyv_mcp` (current version: 0.1.10)
+- The package is distributed on PyPI as `viyv_mcp` (current version: 0.1.21)
 - Generated projects use `uv` for dependency management via `pyproject.toml`
 - Tools using RunContextWrapper can access Slack events and user context when available
 - The test/ directory contains working examples rather than unit tests - use these as reference implementations
@@ -326,3 +387,12 @@ For ChatGPT integration, these tools are mandatory:
 - Environment variables in configs use `$VAR_NAME` syntax
 - Working directory (`cwd`) must exist if specified
 - Child processes are managed automatically; check logs for startup errors
+
+### Security Issues
+- **bypass mode not starting**: `VIYV_MCP_ENV=production` blocks bypass mode. Remove or change VIYV_MCP_ENV
+- **"Authentication failed" errors**: Check that `VIYV_MCP_JWT_SECRET` matches the secret used to sign the JWT
+- **"Tool not found" for existing tools**: The tool's namespace is not in the agent's trusted namespaces. Check JWT `namespace` and `trust` claims
+- **"insufficient clearance" errors**: Agent's `clearance` claim rank is below the tool's `security_level` rank
+- **JWT generation**: Use `python -m viyv_mcp generate-jwt --sub agent --clearance internal --namespace hr --trust common --expires 24h --secret $SECRET`
+- **Audit log location**: Set `VIYV_MCP_AUDIT_LOG=/path/to/audit.jsonl` or check stderr for audit records
+- **stdio mode**: Set `VIYV_MCP_JWT` env var; identity is validated once at startup and fixed for process lifetime

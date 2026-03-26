@@ -33,6 +33,31 @@ def _register_tool_fn(name: str, fn: Callable) -> None:
 
 def _unregister_tool_fn(name: str) -> None:
     _tool_fn_registry.pop(name, None)
+    _fire_tool_event("unregistered", name)
+
+
+# --------------------------------------------------------------------------- #
+# ツール登録/削除イベントフック (Observer パターン)                            #
+# security パッケージがフックを登録し、ツールのメタデータを同期する            #
+# --------------------------------------------------------------------------- #
+_tool_event_hooks: list[Callable] = []
+
+
+def add_tool_event_hook(hook: Callable) -> None:
+    """Register a hook: ``hook(event, tool_name, metadata)``.
+
+    * *event*: ``"registered"`` or ``"unregistered"``
+    * *metadata*: dict with ``namespace``, ``security_level`` etc. (or ``None``)
+    """
+    _tool_event_hooks.append(hook)
+
+
+def _fire_tool_event(event: str, tool_name: str, metadata: dict | None = None) -> None:
+    for hook in _tool_event_hooks:
+        try:
+            hook(event, tool_name, metadata)
+        except Exception:
+            pass  # hooks must not break registration
 
 
 # --------------------------------------------------------------------------- #
@@ -327,9 +352,11 @@ def tool(
     name: str | None = None,
     description: str | None = None,
     tags: set[str] | None = None,
-    group: str | None = None,         # ← 追加: ツールのグループ名
-    title: str | None = None,         # ← 追加: UI表示名（オプション）
-    destructive: bool | None = None,  # ← 追加: 破壊的操作のヒント（オプション）
+    group: str | None = None,
+    title: str | None = None,
+    destructive: bool | None = None,
+    namespace: str | None = None,          # Security: tool namespace
+    security_level: str | None = None,     # Security: required clearance
 ):
     """
     * wrapper (RunContextWrapper) を **Agents 実行時** だけ受け取りたい。
@@ -383,22 +410,27 @@ def tool(
         #   Agents から参照できるよう実体を保持
         _schema_stub.__original_tool_fn__ = impl       # ← ここがポイント
 
-        # ── ★ グループ情報をメタデータとして構築 ★ ──────────────────────
+        # ── メタデータ構築 (group のみ _meta に含める) ──────────────────
         meta_data = None
         if group:
-            # ベンダー名前空間を使用: _meta.viyv.group
             meta_data = {"viyv": {"group": group}}
         # ─────────────────────────────────────────────────────────────────
 
         # 3) FastMCP に登録（JSON-Schema 生成は stub を見る）
-        # ★ meta パラメータを追加
         mcp.tool(
-            name=tool_name, 
-            description=tool_desc, 
+            name=tool_name,
+            description=tool_desc,
             tags=tags,
-            meta=meta_data  # ← FastMCPが _meta に変換
+            meta=meta_data,
         )(_schema_stub)
-        return fn  # 元の関数をそのまま返す
+
+        # 4) ツール登録イベント通知 (security パッケージが Observer で受信)
+        _fire_tool_event("registered", tool_name, {
+            "namespace": namespace,
+            "security_level": security_level,
+        })
+
+        return fn
 
     return decorator
 
@@ -475,8 +507,10 @@ def agent(
     exclude_tools: Optional[Iterable[str]] = None,
     use_tags: Optional[Iterable[str]] = None,
     exclude_tags: Optional[Iterable[str]] = None,
-    group: str | None = None,         # ← 追加: エージェントのグループ名
-    title: str | None = None,         # ← 追加: UI表示名（オプション）
+    group: str | None = None,
+    title: str | None = None,
+    namespace: str | None = None,
+    security_level: str | None = None,
 ):
     if (use_tools and exclude_tools) or (use_tags and exclude_tags):
         raise ValueError("include と exclude を同時指定できません")
@@ -527,20 +561,24 @@ def agent(
         _schema_stub.__doc__ = tool_desc
         _schema_stub.__original_tool_fn__ = _agent_impl
 
-        # ── ★ グループ情報をメタデータとして構築 ★ ──────────────────────
+        # ── メタデータ構築 ──
         meta_data = None
         if group:
-            # ベンダー名前空間を使用: _meta.viyv.group
             meta_data = {"viyv": {"group": group}}
-        # ─────────────────────────────────────────────────────────────────
 
         # --- FastMCP 登録 --------------------
-        # ★ meta パラメータを追加
         mcp.tool(
-            name=tool_name, 
+            name=tool_name,
             description=tool_desc,
-            meta=meta_data  # ← FastMCPが _meta に変換
+            meta=meta_data,
         )(_schema_stub)
+
+        # --- ツール登録イベント通知 ----------
+        _fire_tool_event("registered", tool_name, {
+            "namespace": namespace,
+            "security_level": security_level,
+        })
+
         return fn
 
     return decorator

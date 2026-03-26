@@ -62,12 +62,14 @@ def register(mcp: FastMCP):  # auto_register_modules から呼ばれる
         return x * y * z
 
     # --------------------------------------------------------------------- #
-    # 4) average（配列入力と浮動小数出力）
+    # 4) average（配列入力と浮動小数出力 + セキュリティメタデータ）
     # --------------------------------------------------------------------- #
     @tool(
         description="数列の平均値を求めるツール",
         tags={"calcXX"},
-        group="統計ツール"  # ★ 別グループとして分類
+        group="統計ツール",
+        namespace="analytics",          # ★ namespace: analytics エージェントのみ表示
+        security_level="internal",      # ★ security_level: internal 以上で実行可
     )
     def average(
         numbers: Annotated[

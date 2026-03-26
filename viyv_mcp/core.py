@@ -133,6 +133,29 @@ class ViyvMCP:
             key_manager = None
             logger.info("ViyvMCP: WebSocket bridge disabled")
 
+        # --- セキュリティレイヤー ------------------------------------------- #
+        try:
+            from viyv_mcp.app.security import create_security_layer
+
+            security = create_security_layer()
+            if security:
+                # FastMCP middleware (stdio + HTTP 共通)
+                self._mcp.add_middleware(security.middleware)
+                if self._relay_mcp:
+                    self._relay_mcp.add_middleware(security.middleware)
+
+                # ASGI JWT extractor (HTTP のみ)
+                self._mcp_app = security.wrap_asgi(self._mcp_app)
+                if self._relay_mcp_app:
+                    self._relay_mcp_app = security.wrap_asgi(self._relay_mcp_app)
+
+                logger.info("ViyvMCP: Security layer active")
+        except Exception as exc:
+            # SecurityLayer が SystemExit を raise する場合はそのまま再送出
+            if isinstance(exc, SystemExit):
+                raise
+            logger.debug(f"ViyvMCP: Security layer not loaded — {exc}")
+
         # --- その他のルートのためのStarletteアプリ ------------------------- #
         routes = [
             Mount(path, app=factory() if callable(factory) else factory)

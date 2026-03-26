@@ -82,11 +82,16 @@ async def init_bridges(
         name         = cfg.get("name", "external")
         cmd          = cfg["command"]
         args         = cfg.get("args", [])
-        cfg_tags: Set[str] = set(cfg.get("tags", []))            # ★ 追加: config 由来タグ
-        cfg_group: str | None = cfg.get("group", None)           # ★ 追加: 全ツール用グループ
-        cfg_group_map: dict[str, str] = cfg.get("group_map", {})  # ★ 追加: 個別上書き用
+        cfg_tags: Set[str] = set(cfg.get("tags", []))
+        cfg_group: str | None = cfg.get("group", None)
+        cfg_group_map: dict[str, str] = cfg.get("group_map", {})
         json_env     = cfg.get("env", {})
-        cwd          = cfg.get("cwd", None)                      # ★ 追加: 作業ディレクトリ
+        cwd          = cfg.get("cwd", None)
+        # Security metadata
+        cfg_namespace: str | None = cfg.get("namespace", None)
+        cfg_security_level: str | None = cfg.get("security_level", None)
+        cfg_namespace_map: dict[str, str] = cfg.get("namespace_map", {})
+        cfg_security_level_map: dict[str, str] = cfg.get("security_level_map", {})
 
         # 環境変数マージ（OS が優先）
         env_merged = {k: os.environ.get(k, v) for k, v in json_env.items()}
@@ -114,9 +119,10 @@ async def init_bridges(
         # ----------------------- Tools ----------------------------------------------
         tools = await _safe_list_tools(session, server_name=name)
         for t in tools:
-            # ★ 個別マッピングがあればそれを優先、なければ共通グループ
             tool_group = cfg_group_map.get(t.name, cfg_group)
-            _register_tool_bridge(mcp, session, t, cfg_tags, tool_group)  # ← グループを渡す
+            tool_ns = cfg_namespace_map.get(t.name, cfg_namespace)
+            tool_sl = cfg_security_level_map.get(t.name, cfg_security_level)
+            _register_tool_bridge(mcp, session, t, cfg_tags, tool_group, tool_ns, tool_sl)
         logger.info(f"[{name}] Tools => {[x.name for x in tools]}")
 
         # ----------------------- Resources ------------------------------------------
@@ -325,11 +331,13 @@ async def _safe_list_prompts(session: ClientSession, server_name: str) -> List[t
 # 実際の登録 (tool / resource / prompt)
 # ----------------------------------------------------------------------------
 def _register_tool_bridge(
-    mcp: FastMCP, 
-    session: ClientSession, 
-    tool_info: types.Tool, 
+    mcp: FastMCP,
+    session: ClientSession,
+    tool_info: types.Tool,
     cfg_tags: Set[str] | None = None,
-    cfg_group: str | None = None,  # ← 追加: グループ情報
+    cfg_group: str | None = None,
+    cfg_namespace: str | None = None,
+    cfg_security_level: str | None = None,
 ):
     """
     tool_info から inputSchema を解析し、kwargs を定義して bridged_tool を登録する
@@ -416,21 +424,25 @@ def _register_tool_bridge(
 
     bridged_tool.__doc__ = desc
 
-    # ── ★ グループ情報をメタデータとして構築 ★ ──────────────────────
+    # ── メタデータ構築 (group のみ _meta に含める) ──
     meta_data = None
     if cfg_group:
-        # ベンダー名前空間を使用: _meta.viyv.group
         meta_data = {"viyv": {"group": cfg_group}}
-    # ─────────────────────────────────────────────────────────────────
 
-    # FastMCPにツールを登録（デコレータ形式で）
-    # ★ meta パラメータを追加
+    # FastMCP にツールを登録
     mcp.tool(
-        name=tool_name, 
-        description=desc, 
+        name=tool_name,
+        description=desc,
         tags=cfg_tags,
-        meta=meta_data  # ← FastMCPが _meta に変換
+        meta=meta_data,
     )(bridged_tool)
+
+    # セキュリティイベント通知
+    from viyv_mcp.decorators import _fire_tool_event
+    _fire_tool_event("registered", tool_name, {
+        "namespace": cfg_namespace,
+        "security_level": cfg_security_level,
+    })
 
 
 def _register_resource_bridge(mcp: FastMCP, session: ClientSession, rinfo: types.Resource):
@@ -514,9 +526,8 @@ def unregister_bridged_tools(mcp: FastMCP, tool_names: List[str]) -> None:
 
     for name in tool_names:
         try:
-            # v3: mcp.remove_tool() が公開API
             if hasattr(mcp, "remove_tool"):
                 mcp.remove_tool(name)
-            _unregister_tool_fn(name)
+            _unregister_tool_fn(name)  # also fires "unregistered" event
         except Exception as e:
             logger.warning(f"Failed to remove tool '{name}': {e}")

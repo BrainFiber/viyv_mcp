@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - JWT Authentication & Access Control
+
+### Added
+- **JWT Security Framework**: Complete authentication and authorization subsystem
+  - `viyv_mcp/app/security/` — Clean Architecture (Domain / Infrastructure / Application / Interface)
+  - FastMCP native middleware (`on_call_tool`, `on_list_tools`) works for both stdio and HTTP
+  - ASGI JWT extractor middleware for HTTP `Authorization: Bearer` header
+  - ContextVar-based identity bridge between transport layers
+  - Observer pattern: `decorators.py` fires tool event hooks without depending on security package
+- **Namespace Access Control**: `@tool(namespace="hr")` — agents see only tools in their trusted namespaces
+  - `tools/list` filters by namespace; `tools/call` hides tool existence on namespace mismatch
+- **Security Level Enforcement**: `@tool(security_level="confidential")` — clearance rank check
+  - Default levels: public(0), internal(1), confidential(2), restricted(3); customizable via security.yaml
+- **Bridge Security Metadata**: `namespace`, `security_level`, `namespace_map`, `security_level_map` fields in bridge JSON configs
+- **Audit Logging**: Structured JSON audit log via Python logging (`viyv_mcp.security.audit`)
+  - Output to file (`VIYV_MCP_AUDIT_LOG`) or stderr
+- **CLI**: `python -m viyv_mcp generate-jwt` — generate signed JWTs for agent authentication
+- **Operating Modes**: bypass (dev), authenticated (JWT), deny_all (default safe)
+  - `VIYV_MCP_ENV=production` blocks bypass mode
+- **65 tests**: Unit tests (domain, infrastructure, service, registry) + E2E tests (FastMCP middleware chain + HTTP)
+- **Dependencies**: `PyJWT>=2.0` (core), `PyYAML>=6.0` (optional, for security.yaml)
+
+## [0.1.21] - 2026-03-25
+
+### Changed
+- Separate relay MCP endpoint, fix tool parameter schemas
+
+## [0.1.20] - 2026-03-24
+
+### Fixed
+- Fix WS Bridge double-wrap, screenshot ImageContent, tabId required
+
+## [0.1.19] - 2026-03-23
+
+### Added
+- Add WebSocket bridge for Chrome extension relay
+
+## [0.1.18] - 2026-03-22
+
+### Changed
+- Upgrade FastMCP 2.x → 3.1.0
+
 ## [0.1.17] - 2025-10-16
 
 ### Fixed

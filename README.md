@@ -5,7 +5,7 @@
 [![PyPI version](https://badge.fury.io/py/viyv_mcp.svg)](https://badge.fury.io/py/viyv_mcp)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-0.1.14-green.svg)](https://pypi.org/project/viyv_mcp/)
+[![Version](https://img.shields.io/badge/version-0.1.21-green.svg)](https://pypi.org/project/viyv_mcp/)
 
 ## 🚀 Quick Start
 
@@ -73,6 +73,30 @@ uv pip install gunicorn
 STATELESS_HTTP=true uv run gunicorn main:app \
   -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000
 ```
+
+### 🔒 JWT Authentication & Access Control
+```python
+# Tools with security metadata
+@tool(
+    description="Query salary",
+    namespace="hr",                 # Visible only to hr agents
+    security_level="confidential",  # Requires confidential+ clearance
+)
+def query_salary(employee_id: str) -> str:
+    return f"Salary: $100,000"
+```
+
+```bash
+# Generate JWT for an agent
+python -m viyv_mcp generate-jwt \
+  --sub hr-agent --clearance confidential --namespace hr \
+  --trust common --expires 24h --secret "$SECRET"
+```
+
+- **Namespace**: Controls tool visibility (`tools/list` filtering)
+- **Security Level**: Controls tool executability (`tools/call` clearance check)
+- **Modes**: bypass (dev), authenticated (JWT), deny_all (default safe)
+- **Both transports**: Works for stdio (`.mcp.json`) and HTTP
 
 ### 🔗 Built-in Integrations
 - **Slack**: Full event handling, file management, thread context

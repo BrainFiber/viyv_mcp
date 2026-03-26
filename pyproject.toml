@@ -25,7 +25,11 @@ dependencies = [
   "openai-agents>=0.0.13",
   "pytest>=7.0",
   "websockets>=13.0",
+  "PyJWT>=2.0",
 ]
+
+[project.optional-dependencies]
+security = ["PyYAML>=6.0"]
 
 [project.urls]
 Homepage = "https://github.com/BrainFiber/viyv_mcp"
