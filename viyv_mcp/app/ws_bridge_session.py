@@ -7,9 +7,8 @@ import logging
 import time
 import uuid
 
-from fastmcp.exceptions import ToolError
-from fastmcp.tools.tool import ToolResult
-from mcp.types import ImageContent, TextContent
+from mcp.shared.exceptions import McpError
+from mcp.types import CallToolResult, ErrorData, ImageContent, TextContent
 from starlette.websockets import WebSocket
 
 from viyv_mcp.app.ws_bridge_protocol import ToolCallMessage, ToolResultMessage
@@ -64,11 +63,9 @@ class WebSocketBridgeSession:
                 if result.error
                 else 'Unknown error'
             )
-            # Raise ToolError so FastMCP sets isError=True in the MCP response
-            raise ToolError(error_msg)
+            raise McpError(ErrorData(code=-32000, message=error_msg))
 
-        # Convert result to MCP-compatible format using FastMCP ToolResult
-        # so that FastMCP's tool runner does isinstance(result, ToolResult) -> early return
+        # Convert result to MCP-compatible CallToolResult format
         result_data = result.result or {}
 
         # The tool result from the extension is usually {content: [...]} or plain data
@@ -89,12 +86,12 @@ class WebSocketBridgeSession:
                         ))
                 else:
                     content_items.append(TextContent(type='text', text=str(item)))
-            return ToolResult(content=content_items)
+            return CallToolResult(content=content_items)
 
         # Detect image data (e.g. screenshot result: {data: "base64...", format: "jpeg"})
         if 'data' in result_data and result_data.get('format') in ('jpeg', 'png', 'gif', 'webp'):
             mime = f"image/{result_data['format']}"
-            return ToolResult(content=[
+            return CallToolResult(content=[
                 ImageContent(type='image', data=result_data['data'], mimeType=mime),
             ])
 

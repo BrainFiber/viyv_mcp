@@ -11,7 +11,7 @@ import os
 import pathlib
 from typing import Any, Callable, NamedTuple
 
-from fastmcp import FastMCP
+from viyv_mcp.server import McpServer
 from starlette.routing import Mount
 from starlette.types import ASGIApp
 from fastapi.staticfiles import StaticFiles
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 # 戻り値型                                                                     #
 # --------------------------------------------------------------------------- #
 class WSBridgeComponents(NamedTuple):
-    relay_mcp: FastMCP | None
+    relay_mcp: McpServer | None
     relay_mcp_app: ASGIApp | None
     ws_bridge_hub: WebSocketBridgeHub | None
     ws_routes: list
@@ -39,7 +39,6 @@ class WSBridgeComponents(NamedTuple):
 # 静的ファイル                                                                  #
 # --------------------------------------------------------------------------- #
 def ensure_static_dir() -> str:
-    """STATIC_DIR 環境変数を読み取り、ディレクトリを作成して返す。"""
     static_dir = os.getenv(
         "STATIC_DIR",
         os.path.join(os.getcwd(), "static", "images"),
@@ -57,10 +56,6 @@ def setup_ws_bridge(
     on_connect: Callable | None = None,
     on_disconnect: Callable | None = None,
 ) -> WSBridgeComponents:
-    """WebSocket ブリッジをセットアップし、構成部品を返す。
-
-    ``Config.WS_BRIDGE_ENABLED`` が False の場合は全て None/空で返す。
-    """
     if not Config.WS_BRIDGE_ENABLED:
         logger.info("ViyvMCP: WebSocket bridge disabled")
         return WSBridgeComponents(None, None, None, [], None)
@@ -70,7 +65,7 @@ def setup_ws_bridge(
         storage_path=Config.RELAY_KEY_STORAGE,
     )
 
-    relay_mcp = FastMCP(f"{server_name} (Relay)")
+    relay_mcp = McpServer(f"{server_name} (Relay)")
     relay_mcp_app = relay_mcp.http_app(path="/", stateless_http=stateless_http)
 
     hub = WebSocketBridgeHub(
@@ -93,16 +88,12 @@ def setup_ws_bridge(
 # セキュリティレイヤー                                                          #
 # --------------------------------------------------------------------------- #
 def apply_security(
-    mcp: FastMCP,
+    mcp: McpServer,
     mcp_app: ASGIApp,
-    relay_mcp: FastMCP | None,
+    relay_mcp: McpServer | None,
     relay_mcp_app: ASGIApp | None,
 ) -> tuple[ASGIApp, ASGIApp | None]:
-    """セキュリティレイヤーを適用し、(wrapped_mcp_app, wrapped_relay_app) を返す。
-
-    * ImportError … security モジュール未インストール → そのまま返す
-    * その他の例外 … 設定ミス等 → 再送出（サーバーを起動させない）
-    """
+    """セキュリティレイヤーを適用し、(wrapped_mcp_app, wrapped_relay_app) を返す。"""
     try:
         from viyv_mcp.app.security import create_security_layer
     except ImportError:
@@ -110,7 +101,7 @@ def apply_security(
         return mcp_app, relay_mcp_app
 
     try:
-        security = create_security_layer()
+        security = create_security_layer(tool_registry=mcp.registry)
     except SystemExit:
         raise
     except Exception as exc:
@@ -118,10 +109,12 @@ def apply_security(
         raise
 
     if security:
-        mcp.add_middleware(security.middleware)
+        # Inject security service into MCP servers (handler-level checks)
+        mcp.set_security_service(security.service)
         if relay_mcp:
-            relay_mcp.add_middleware(security.middleware)
+            relay_mcp.set_security_service(security.service)
 
+        # Wrap ASGI apps for HTTP JWT extraction
         mcp_app = security.wrap_asgi(mcp_app)
         if relay_mcp_app:
             relay_mcp_app = security.wrap_asgi(relay_mcp_app)
@@ -138,7 +131,6 @@ def build_routes(
     ws_routes: list,
     static_dir: str,
 ) -> list:
-    """Starlette ルートを組み立てて返す。"""
     routes = [
         Mount(path, app=factory() if callable(factory) else factory)
         for path, factory in list_entries()

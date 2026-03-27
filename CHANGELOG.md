@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-03-27
+
+### Changed (Architecture)
+- **FastMCP removed**: Replaced with direct `mcp` SDK v1.26.0 (`mcp.server.lowlevel.Server`). Eliminates non-standard `extensions` field in capabilities that broke Claude Agent SDK compatibility
+- **New `McpServer` class** (`viyv_mcp/server/mcp_server.py`): Owns tool/resource/prompt registry, handles MCP protocol, provides stdio and StreamableHTTP transports
+- **New `McpRegistry`** (`viyv_mcp/server/registry.py`): Unified registry with integrated security metadata (replaces separate `ToolSecurityRegistry`)
+- **Security integrated at handler level**: Namespace filtering and clearance checks in `list_tools`/`call_tool` handlers instead of FastMCP middleware
+- **Bridge manager simplified**: ~80 lines of signature construction code removed. JSON Schema passed directly to `McpServer.register_tool()`
+- **`@entry` simplified**: Removed `use_tools`/`exclude_tools`/`use_tags`/`exclude_tags` parameters (MCP server responsibility is tool exposure, not internal routing)
+- **`@tool` annotations**: `title` and `destructive` parameters now map to MCP `ToolAnnotations`
+
+### Added
+- `viyv_mcp/server/` package — `McpServer`, `McpRegistry`, `ToolEntry`, `ResourceEntry`, `PromptEntry`
+- `ToolMetadataProvider` Protocol in `security/domain/models.py` for dependency inversion
+- `_ensure_async()` helper for sync→async tool wrapping
+- `_build_input_schema()` — generates JSON Schema from Python type hints via pydantic
+
+### Removed
+- **`fastmcp` dependency** — replaced by `mcp>=1.26.0`
+- **`@agent` decorator** — internal tool-calling-tools mechanism is not MCP server responsibility
+- **`agent_runtime.py`** module — ContextVar tool injection infrastructure
+- **`_collect_tools_map()`**, **`_wrap_callable_with_tools()`**, **`_wrap_factory_with_tools()`** — internal agent framework code
+- **`_tool_fn_registry`** — no longer needed without agent tool collection
+- **Observer pattern** (`_fire_tool_event`, `add_tool_event_hook`) — security metadata stored directly in `ToolEntry`
+- **`ToolSecurityRegistry`** (`security/tool_registry.py`) — merged into `McpRegistry`
+- **`ViyvSecurityMiddleware`** (`security/fastmcp_middleware.py`) — security checks moved to McpServer handlers
+
+### Fixed
+- **Agent SDK compatibility**: `capabilities` response no longer includes non-standard `extensions: {"io.modelcontextprotocol/ui": {}}` field
+- **`serverInfo.version`** now shows viyv_mcp version instead of FastMCP version
+- **Test event loop errors**: Replaced deprecated `asyncio.get_event_loop().run_until_complete()` with `asyncio.run()`
+
 ## [1.1.0] - 2026-03-27
 
 ### Changed

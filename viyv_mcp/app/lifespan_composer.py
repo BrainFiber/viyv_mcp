@@ -28,7 +28,7 @@ def compose_lifespan(
     Parameters
     ----------
     mcp_lifespan : async context manager factory, or None
-        FastMCP の StreamableHTTPSessionManager lifespan。
+        MCP HTTP transport (StreamableHTTPSessionManager) lifespan。
         ``mcp_http_app.router.lifespan_context`` から取得したものを渡す。
     relay_lifespan : same, or None
         Relay MCP 用。WS ブリッジ無効時は None。

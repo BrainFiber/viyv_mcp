@@ -10,7 +10,6 @@ from typing import Optional, Dict, Any, List, Annotated
 from datetime import datetime
 from viyv_mcp import tool
 from pydantic import Field
-from fastmcp import FastMCP
 import logging
 
 logger = logging.getLogger(__name__)
@@ -224,7 +223,7 @@ async def run_claude_cli(prompt: str, context_id: str, cwd: str = None, max_turn
         logger.error(f"Traceback: {traceback.format_exc()}")
         return f"Failed to execute Claude CLI: {str(e)}"
 
-def register(mcp: FastMCP):
+def register(mcp):
     """MCPにツールを登録"""
     logger.info("Registering claude_cli tool...")
 

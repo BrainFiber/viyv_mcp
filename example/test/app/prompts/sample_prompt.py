@@ -1,8 +1,7 @@
 # app/prompts/sample_prompt.py
-from fastmcp import FastMCP
 from viyv_mcp import prompt
 
-def register(mcp: FastMCP):
+def register(mcp):
     @prompt()
     def sample_prompt(query: str) -> str:
         """

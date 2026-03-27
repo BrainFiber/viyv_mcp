@@ -6,11 +6,10 @@
 from typing import Annotated, List
 
 from pydantic import Field
-from fastmcp import FastMCP   # 型ヒント用（任意）
 from viyv_mcp import tool
 
 
-def register(mcp: FastMCP):  # auto_register_modules から呼ばれる
+def register(mcp):  # auto_register_modules から呼ばれる
     # --------------------------------------------------------------------- #
     # 1) add
     # --------------------------------------------------------------------- #

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 
-from fastmcp import FastMCP
+from viyv_mcp.server import McpServer
 from mcp import types
 
 from viyv_mcp.app.bridge_manager import _register_tool_bridge
@@ -603,7 +603,7 @@ BROWSER_TOOLS = [
 
 
 def register_browser_tools_for_session(
-    mcp: FastMCP,
+    mcp: McpServer,
     session: WebSocketBridgeSession,
     tags: set[str] | None = None,
 ) -> list[str]:

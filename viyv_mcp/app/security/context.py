@@ -1,4 +1,4 @@
-"""ContextVar bridge between transport layers and the FastMCP middleware.
+"""ContextVar bridge between transport layers and the MCP handlers.
 
 * **HTTP mode** — the ASGI JWT extractor sets the identity per-request.
 * **stdio mode** — the identity is set once at startup and inherited by all

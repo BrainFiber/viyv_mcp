@@ -19,7 +19,7 @@ from typing import Annotated, Dict, Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from pydantic import Field
-from fastmcp import FastMCP
+from viyv_mcp.server import McpServer
 from mcp import ClientSession, types
 
 
@@ -33,9 +33,8 @@ class TestToolDecorator:
     def test_tool_registers_with_fastmcp(self):
         """@tool でツールが FastMCP に登録される"""
         from viyv_mcp import tool
-        from viyv_mcp.decorators import _tool_fn_registry
 
-        mcp = FastMCP("test-tool-reg")
+        mcp = McpServer("test-tool-reg")
 
         def register(mcp):
             @tool(description="Add two numbers", tags={"calc"})
@@ -44,15 +43,14 @@ class TestToolDecorator:
 
         register(mcp)
 
-        assert "add" in _tool_fn_registry
-        assert asyncio.iscoroutinefunction(_tool_fn_registry["add"])
+        assert mcp.registry.get_tool("add") is not None
+        assert asyncio.iscoroutinefunction(mcp.registry.get_tool("add").fn)
 
     def test_tool_with_annotated_fields(self):
         """Annotated[int, Field(...)] がスキーマに反映される"""
         from viyv_mcp import tool
-        from viyv_mcp.decorators import _tool_fn_registry
 
-        mcp = FastMCP("test-annotated")
+        mcp = McpServer("test-annotated")
 
         def register(mcp):
             @tool(description="Multiply")
@@ -63,14 +61,13 @@ class TestToolDecorator:
                 return x * y
 
         register(mcp)
-        assert "multiply" in _tool_fn_registry
+        assert mcp.registry.get_tool("multiply") is not None
 
     def test_tool_with_default_params(self):
         """デフォルト引数が正しく扱われる"""
         from viyv_mcp import tool
-        from viyv_mcp.decorators import _tool_fn_registry
 
-        mcp = FastMCP("test-defaults")
+        mcp = McpServer("test-defaults")
 
         def register(mcp):
             @tool(description="Greet")
@@ -78,13 +75,13 @@ class TestToolDecorator:
                 return f"{greeting}, {name}!"
 
         register(mcp)
-        assert "greet" in _tool_fn_registry
+        assert mcp.registry.get_tool("greet") is not None
 
     def test_tool_with_group_metadata(self):
         """group メタデータが正しく渡される"""
         from viyv_mcp import tool
 
-        mcp = FastMCP("test-group")
+        mcp = McpServer("test-group")
 
         def register(mcp):
             @tool(description="Test", group="MyGroup", tags={"test"})
@@ -94,35 +91,25 @@ class TestToolDecorator:
         register(mcp)
 
     def test_tool_with_security_metadata(self):
-        """namespace / security_level メタデータが Observer 経由で伝達される"""
+        """namespace / security_level メタデータが McpRegistry に直接登録される"""
         from viyv_mcp import tool
-        from viyv_mcp.decorators import add_tool_event_hook, _tool_event_hooks
 
-        events = []
-        def _capture(event, tool_name, metadata):
-            events.append((event, tool_name, metadata))
+        mcp = McpServer("test-security")
 
-        _tool_event_hooks.append(_capture)
-        try:
-            mcp = FastMCP("test-security")
+        def register(mcp):
+            @tool(
+                description="Secret tool",
+                namespace="hr",
+                security_level=1,
+            )
+            def secret_tool() -> str:
+                return "secret"
 
-            def register(mcp):
-                @tool(
-                    description="Secret tool",
-                    namespace="hr",
-                    security_level=1,
-                )
-                def secret_tool() -> str:
-                    return "secret"
+        register(mcp)
 
-            register(mcp)
-
-            registered_events = [e for e in events if e[0] == "registered" and e[1] == "secret_tool"]
-            assert len(registered_events) == 1
-            assert registered_events[0][2]["namespace"] == "hr"
-            assert registered_events[0][2]["security_level"] == 1
-        finally:
-            _tool_event_hooks.remove(_capture)
+        meta = mcp.registry.get("secret_tool")
+        assert meta.namespace == "hr"
+        assert meta.security_level == 1
 
 
 # ========================================================================== #
@@ -136,7 +123,7 @@ class TestToolExecution:
         """登録した sync ツールの元関数が正しく動作する"""
         from viyv_mcp import tool
 
-        mcp = FastMCP("test-call")
+        mcp = McpServer("test-call")
         result_holder = []
 
         def register(mcp):
@@ -154,7 +141,7 @@ class TestToolExecution:
         """登録した async ツールの元関数が正しく動作する"""
         from viyv_mcp import tool
 
-        mcp = FastMCP("test-async-call")
+        mcp = McpServer("test-async-call")
         result_holder = []
 
         def register(mcp):
@@ -174,7 +161,7 @@ class TestToolExecution:
         """FastMCP にツールが登録されている"""
         from viyv_mcp import tool
 
-        mcp = FastMCP("test-list")
+        mcp = McpServer("test-list")
 
         def register(mcp):
             @tool(description="Tool A")
@@ -187,79 +174,23 @@ class TestToolExecution:
 
         register(mcp)
 
-        # get_tool() (singular) で個別取得
-        assert mcp.get_tool("tool_a_list") is not None
-        assert mcp.get_tool("tool_b_list") is not None
+        # McpRegistry で個別取得
+        assert mcp.registry.get_tool("tool_a_list") is not None
+        assert mcp.registry.get_tool("tool_b_list") is not None
 
 
 # ========================================================================== #
-# 3. @agent デコレータテスト
+# 3. ツールレジストリ確認テスト
 # ========================================================================== #
 
-class TestAgentDecorator:
-    """@agent デコレータの基本動作"""
-
-    def test_agent_registers_with_fastmcp(self):
-        """@agent でエージェントが FastMCP に登録される"""
-        from viyv_mcp import agent
-        from viyv_mcp.decorators import _tool_fn_registry
-
-        mcp = FastMCP("test-agent-reg")
-
-        def register(mcp):
-            @agent(description="Test agent")
-            async def my_agent(query: str) -> str:
-                return f"Agent response: {query}"
-
-        register(mcp)
-
-        assert "my_agent" in _tool_fn_registry
-        assert getattr(_tool_fn_registry["my_agent"], "__viyv_agent__", False) is True
-
-    def test_agent_with_missing_mcp_does_not_crash(self):
-        """スタックに FastMCP がない場合、@agent は警告のみ"""
-        from viyv_mcp import agent
-
-        @agent(description="Outside agent")
-        async def orphan_agent(query: str) -> str:
-            return query
-
-        assert asyncio.iscoroutinefunction(orphan_agent)
-
-
-# ========================================================================== #
-# 4. _collect_tools_map テスト
-# ========================================================================== #
-
-class TestCollectToolsMap:
-    """_collect_tools_map の動作確認"""
-
-    def test_collect_all_tools_via_registry(self):
-        """ツールレジストリに全ツールが登録される"""
-        from viyv_mcp import tool
-        from viyv_mcp.decorators import _tool_fn_registry
-
-        mcp = FastMCP("test-collect")
-
-        def register(mcp):
-            @tool(description="T1")
-            def t1_collect() -> str:
-                return "1"
-
-            @tool(description="T2")
-            def t2_collect() -> str:
-                return "2"
-
-        register(mcp)
-
-        assert "t1_collect" in _tool_fn_registry
-        assert "t2_collect" in _tool_fn_registry
+class TestToolRegistry:
+    """McpRegistry へのツール登録確認"""
 
     def test_get_tool_shows_registered(self):
-        """FastMCP.get_tool() で個別ツールが確認できる"""
+        """McpRegistry.get_tool() で個別ツールが確認できる"""
         from viyv_mcp import tool
 
-        mcp = FastMCP("test-exclude")
+        mcp = McpServer("test-registry")
 
         def register(mcp):
             @tool(description="Keep")
@@ -272,53 +203,54 @@ class TestCollectToolsMap:
 
         register(mcp)
 
-        assert mcp.get_tool("keep_me_exc") is not None
-        assert mcp.get_tool("skip_me_exc") is not None
+        assert mcp.registry.get_tool("keep_me_exc") is not None
+        assert mcp.registry.get_tool("skip_me_exc") is not None
 
 
 # ========================================================================== #
 # 5. セキュリティ Observer 連携テスト
 # ========================================================================== #
 
-class TestSecurityObserver:
-    """セキュリティ Observer パターンの動作確認"""
+class TestSecurityMetadataIntegration:
+    """セキュリティメタデータが McpRegistry に直接統合されている確認"""
 
-    def test_tool_event_hook_fires_on_register(self):
-        from viyv_mcp.decorators import _fire_tool_event, _tool_event_hooks
+    def test_tool_security_stored_in_registry(self):
+        from viyv_mcp import tool
 
-        events = []
-        hook = lambda e, n, m: events.append((e, n, m))
-        _tool_event_hooks.append(hook)
-        try:
-            _fire_tool_event("registered", "test_tool", {"namespace": "common"})
-            assert len(events) == 1
-            assert events[0][1] == "test_tool"
-        finally:
-            _tool_event_hooks.remove(hook)
+        mcp = McpServer("test-sec-reg")
+        def register(mcp):
+            @tool(description="HR tool", namespace="hr", security_level=1)
+            def hr_tool() -> str:
+                return "hr"
+        register(mcp)
 
-    def test_tool_event_hook_fires_on_unregister(self):
-        from viyv_mcp.decorators import _unregister_tool_fn, _register_tool_fn, _tool_event_hooks
+        meta = mcp.registry.get("hr_tool")
+        assert meta.namespace == "hr"
+        assert meta.security_level == 1
 
-        events = []
-        hook = lambda e, n, m: events.append((e, n))
-        _tool_event_hooks.append(hook)
-        try:
-            _register_tool_fn("temp_tool_evt", lambda: None)
-            _unregister_tool_fn("temp_tool_evt")
-            unregistered = [e for e in events if e[0] == "unregistered"]
-            assert len(unregistered) >= 1
-        finally:
-            _tool_event_hooks.remove(hook)
+    def test_tool_default_security(self):
+        from viyv_mcp import tool
 
-    def test_hook_failure_does_not_break(self):
-        from viyv_mcp.decorators import _fire_tool_event, _tool_event_hooks
+        mcp = McpServer("test-sec-default")
+        def register(mcp):
+            @tool(description="Plain tool")
+            def plain_tool() -> str:
+                return "plain"
+        register(mcp)
 
-        bad_hook = lambda e, n, m: (_ for _ in ()).throw(RuntimeError("Hook failure!"))
-        _tool_event_hooks.append(bad_hook)
-        try:
-            _fire_tool_event("registered", "should_not_crash", {})
-        finally:
-            _tool_event_hooks.remove(bad_hook)
+        meta = mcp.registry.get("plain_tool")
+        assert meta.namespace == "common"
+        assert meta.security_level is None
+
+    def test_unregister_tool_clears_security(self):
+        mcp = McpServer("test-unreg")
+        mcp.register_tool("temp", "Temp", lambda: None,
+                          {"type": "object", "properties": {}},
+                          namespace="hr", security_level=0)
+
+        assert mcp.registry.get("temp").namespace == "hr"
+        mcp.remove_tool("temp")
+        assert mcp.registry.get("temp").namespace == "common"  # default
 
 
 # ========================================================================== #
@@ -336,7 +268,7 @@ class TestViyvMCPAssembly:
     def test_viyv_mcp_has_mcp_instance(self):
         from viyv_mcp import ViyvMCP
         app = ViyvMCP("E2E Test Server")
-        assert isinstance(app._mcp, FastMCP)
+        assert isinstance(app._mcp, McpServer)
 
     def test_viyv_mcp_starlette_app_exists(self):
         from viyv_mcp import ViyvMCP
@@ -364,7 +296,7 @@ class TestMCPFactory:
             yield
 
         mcp = create_mcp_server("factory-test", dummy_lifespan)
-        assert isinstance(mcp, FastMCP)
+        assert isinstance(mcp, McpServer)
 
 
 class TestASGIBuilder:
@@ -422,7 +354,7 @@ class TestLifespanComposer:
                 assert stopped is False
             assert stopped is True
 
-        asyncio.get_event_loop().run_until_complete(_run())
+        asyncio.run(_run())
 
 
 # ========================================================================== #
@@ -441,15 +373,15 @@ class TestBridgeManagerTypes:
 
     def test_init_bridges_with_empty_dir(self, tmp_path):
         from viyv_mcp.app.bridge_manager import init_bridges
-        mcp = FastMCP("bridge-test")
-        bridges = asyncio.get_event_loop().run_until_complete(
+        mcp = McpServer("bridge-test")
+        bridges = asyncio.run(
             init_bridges(mcp, str(tmp_path))
         )
         assert bridges == []
 
     def test_close_bridges_with_empty_list(self):
         from viyv_mcp.app.bridge_manager import close_bridges
-        asyncio.get_event_loop().run_until_complete(close_bridges([]))
+        asyncio.run(close_bridges([]))
 
 
 # ========================================================================== #
@@ -485,7 +417,7 @@ class TestExistingProtocol:
             result = await mock_session.call_tool("test_tool", arguments={"param1": "test_value"})
             assert result.content[0].text == "Success"
 
-        asyncio.get_event_loop().run_until_complete(_run())
+        asyncio.run(_run())
 
 
 # ========================================================================== #
@@ -498,9 +430,8 @@ class TestJSONSchemaGeneration:
     def test_tool_registers_with_correct_metadata(self):
         """ツールが正しいメタデータで登録される"""
         from viyv_mcp import tool
-        from viyv_mcp.decorators import _tool_fn_registry
 
-        mcp = FastMCP("test-schema")
+        mcp = McpServer("test-schema")
 
         def register(mcp):
             @tool(description="Schema test tool")
@@ -514,25 +445,22 @@ class TestJSONSchemaGeneration:
         register(mcp)
 
         # レジストリに登録されている
-        assert "schema_test" in _tool_fn_registry
+        assert mcp.registry.get_tool("schema_test") is not None
         # async ラッパとして登録されている
-        assert asyncio.iscoroutinefunction(_tool_fn_registry["schema_test"])
+        assert asyncio.iscoroutinefunction(mcp.registry.get_tool("schema_test").fn)
 
-    def test_tools_param_hidden_from_registry(self):
-        """tools パラメータがシグネチャから除外される"""
+    def test_sync_tool_wrapped_as_async(self):
+        """sync ツールが async にラップされる"""
         from viyv_mcp import tool
-        from viyv_mcp.decorators import _tool_fn_registry
 
-        mcp = FastMCP("test-no-tools-param")
+        mcp = McpServer("test-sync-wrap")
 
         def register(mcp):
-            @tool(description="With tools param")
-            def with_tools(query: str, tools: Dict = None) -> str:
-                return query
+            @tool(description="Sync tool")
+            def sync_tool(x: int) -> int:
+                return x * 2
 
         register(mcp)
 
-        impl = _tool_fn_registry["with_tools"]
-        sig = inspect.signature(impl)
-        assert "query" in sig.parameters
-        assert "tools" not in sig.parameters, "tools param should be excluded from signature"
+        entry = mcp.registry.get_tool("sync_tool")
+        assert asyncio.iscoroutinefunction(entry.fn)

@@ -6,21 +6,25 @@ import logging.handlers
 from viyv_mcp.app.security.domain.models import AgentIdentity, AuthMode, AuthResult, ToolSecurityMeta
 from viyv_mcp.app.security.infrastructure.config_loader import SecurityConfig
 from viyv_mcp.app.security.service import SecurityService
-from viyv_mcp.app.security.tool_registry import ToolSecurityRegistry
+from viyv_mcp.server.registry import McpRegistry, ToolEntry
 
 SECRET = "a-test-secret-that-is-at-least-32-bytes-long!"
 
 
+def _noop_fn(**kw):
+    pass
+
+
 def _make_service(auth_mode=AuthMode.AUTHENTICATED) -> SecurityService:
     config = SecurityConfig(auth_mode=auth_mode, jwt_secret=SECRET)
-    registry = ToolSecurityRegistry()
+    registry = McpRegistry()
     audit = logging.getLogger("test.audit")
     return SecurityService(config, registry, audit)
 
 
 def test_authorize_allowed():
     svc = _make_service()
-    svc._tool_registry.register("add", ToolSecurityMeta(namespace="common", security_level=None))
+    svc._tool_registry.register_tool(ToolEntry(name="add", description="", fn=_noop_fn, input_schema={"type":"object","properties":{}}, security=ToolSecurityMeta(namespace="common", security_level=None)))
     agent = AgentIdentity(sub="a", clearance=2, namespace="hr")
     result = svc.authorize_tool_call(agent, "add")
     assert result.allowed
@@ -28,7 +32,7 @@ def test_authorize_allowed():
 
 def test_authorize_denied_namespace():
     svc = _make_service()
-    svc._tool_registry.register("secret", ToolSecurityMeta(namespace="finance", security_level=None))
+    svc._tool_registry.register_tool(ToolEntry(name="secret", description="", fn=_noop_fn, input_schema={"type":"object","properties":{}}, security=ToolSecurityMeta(namespace="finance", security_level=None)))
     agent = AgentIdentity(sub="a", clearance=2, namespace="hr")
     result = svc.authorize_tool_call(agent, "secret")
     assert not result.allowed
@@ -37,7 +41,7 @@ def test_authorize_denied_namespace():
 
 def test_authorize_denied_clearance():
     svc = _make_service()
-    svc._tool_registry.register("classify", ToolSecurityMeta(namespace="hr", security_level=0))
+    svc._tool_registry.register_tool(ToolEntry(name="classify", description="", fn=_noop_fn, input_schema={"type":"object","properties":{}}, security=ToolSecurityMeta(namespace="hr", security_level=0)))
     agent = AgentIdentity(sub="a", clearance=2, namespace="hr")
     result = svc.authorize_tool_call(agent, "classify")
     assert not result.allowed
@@ -46,9 +50,9 @@ def test_authorize_denied_clearance():
 
 def test_filter_tools():
     svc = _make_service()
-    svc._tool_registry.register("t1", ToolSecurityMeta(namespace="hr", security_level=None))
-    svc._tool_registry.register("t2", ToolSecurityMeta(namespace="finance", security_level=None))
-    svc._tool_registry.register("t3", ToolSecurityMeta(namespace="common", security_level=None))
+    svc._tool_registry.register_tool(ToolEntry(name="t1", description="", fn=_noop_fn, input_schema={"type":"object","properties":{}}, security=ToolSecurityMeta(namespace="hr", security_level=None)))
+    svc._tool_registry.register_tool(ToolEntry(name="t2", description="", fn=_noop_fn, input_schema={"type":"object","properties":{}}, security=ToolSecurityMeta(namespace="finance", security_level=None)))
+    svc._tool_registry.register_tool(ToolEntry(name="t3", description="", fn=_noop_fn, input_schema={"type":"object","properties":{}}, security=ToolSecurityMeta(namespace="common", security_level=None)))
 
     agent = AgentIdentity(sub="a", clearance=2, namespace="hr")
 
@@ -142,7 +146,7 @@ def test_log_access_allowed():
     import json
 
     svc = _make_service()
-    svc._tool_registry.register("tool1", ToolSecurityMeta())
+    svc._tool_registry.register_tool(ToolEntry(name="tool1", description="", fn=_noop_fn, input_schema={"type":"object","properties":{}}, security=ToolSecurityMeta()))
     agent = AgentIdentity(sub="user1", clearance=3, namespace="hr")
     result = AuthResult(allowed=True, reason="")
 

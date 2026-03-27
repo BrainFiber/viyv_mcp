@@ -1,10 +1,10 @@
 # core.py
-"""ViyvMCP — Streamable HTTP + 静的配信 + エントリー群を 1 つにまとめる ASGI アプリ"""
+"""ViyvMCP -- Streamable HTTP + 静的配信 + エントリー群を 1 つにまとめる ASGI アプリ"""
 import logging
 
 from starlette.applications import Starlette
-from fastmcp import FastMCP
 
+from viyv_mcp.server import McpServer
 from viyv_mcp.app.lifespan import app_lifespan_context
 from viyv_mcp.app.bridge_manager import init_bridges, close_bridges, unregister_bridged_tools
 from viyv_mcp.app.config import Config
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 def _extract_lifespan(app):
-    """Starlette/FastMCP app から lifespan context を安全に取得する。"""
+    """Starlette app から lifespan context を安全に取得する。"""
     if app is None:
         return None
     try:
@@ -46,9 +46,9 @@ class ViyvMCP:
         self.server_name = server_name
         self.stateless_http = stateless_http
         self._bridge_config = bridge_config or Config.BRIDGE_CONFIG_DIR
-        self._mcp: FastMCP | None = None
+        self._mcp: McpServer | None = None
         self._mcp_app = None
-        self._relay_mcp: FastMCP | None = None
+        self._relay_mcp: McpServer | None = None
         self._relay_mcp_app = None
         self._ws_bridge_hub = None
         self._ws_registered_tools: dict[str, list[str]] = {}
@@ -59,7 +59,6 @@ class ViyvMCP:
     #  WebSocket コールバック                                                 #
     # --------------------------------------------------------------------- #
     def _on_ws_connect(self, key: str, session):
-        """WS 接続時 — relay MCP にブラウザツール登録"""
         if not self._relay_mcp:
             logger.warning("[ws-bridge] Relay MCP not available, skipping tool registration")
             return
@@ -73,7 +72,6 @@ class ViyvMCP:
         )
 
     def _on_ws_disconnect(self, key: str, session):
-        """WS 切断時 — ブラウザツール登録解除"""
         tool_names = self._ws_registered_tools.pop(key, [])
         if tool_names and self._relay_mcp:
             unregister_bridged_tools(self._relay_mcp, tool_names)
@@ -107,11 +105,10 @@ class ViyvMCP:
         self._ws_bridge_hub = ws.ws_bridge_hub
 
         # 4. lifespan をセキュリティ適用前に取得
-        #    (apply_security の ASGI ラッパが .router 属性を隠すため)
         mcp_lifespan = _extract_lifespan(self._mcp_app)
         relay_lifespan = _extract_lifespan(self._relay_mcp_app)
 
-        # 5. セキュリティ (ASGI ラッパで mcp_app を上書き)
+        # 5. セキュリティ
         self._mcp_app, self._relay_mcp_app = apply_security(
             self._mcp, self._mcp_app,
             self._relay_mcp, self._relay_mcp_app,
@@ -129,7 +126,7 @@ class ViyvMCP:
             if self._bridges:
                 await close_bridges(self._bridges)
 
-        # 7. 複合 lifespan (セキュリティ適用前に取得した lifespan を渡す)
+        # 7. 複合 lifespan
         lifespan = compose_lifespan(
             mcp_lifespan=mcp_lifespan,
             relay_lifespan=relay_lifespan,
@@ -151,10 +148,8 @@ class ViyvMCP:
         return self._asgi_app
 
     async def __call__(self, scope, receive, send):
-        """カスタム ASGI ルーター: /mcp パスを直接 MCP アプリに、それ以外を Starlette に"""
         path = scope.get("path", "")
 
-        # /relay/mcp → Relay-only MCP (browser tools only)
         if path.startswith("/relay/mcp") and self._relay_mcp_app:
             new_path = path[10:] if len(path) > 10 else "/"
             scope = dict(scope)
@@ -162,7 +157,6 @@ class ViyvMCP:
             scope["raw_path"] = new_path.encode()
             return await self._relay_mcp_app(scope, receive, send)
 
-        # /mcp → Main MCP (all tools except browser relay)
         if path.startswith("/mcp"):
             new_path = path[4:] if len(path) > 4 else "/"
             scope = dict(scope)
@@ -170,18 +164,13 @@ class ViyvMCP:
             scope["raw_path"] = new_path.encode()
             return await self._mcp_app(scope, receive, send)
 
-        # その他のパスは Starlette アプリに
         return await self._starlette_app(scope, receive, send)
 
     # --------------------------------------------------------------------- #
     #  stdio エントリポイント                                                  #
     # --------------------------------------------------------------------- #
     async def run_stdio_async(self):
-        """stdio transport で MCP サーバーを起動する。
-
-        セキュリティ middleware (mcp.add_middleware 済み) とブリッジの
-        ライフサイクルを含む完全な起動メソッド。
-        """
+        """stdio transport で MCP サーバーを起動する。"""
         bridges = await init_bridges(self._mcp, self._bridge_config)
         try:
             await self._mcp.run_stdio_async()

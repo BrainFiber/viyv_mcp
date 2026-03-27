@@ -5,12 +5,11 @@ ChatGPTとの接続のためのみに必要な最小限の実装
 from typing import Dict, Any, Annotated
 from viyv_mcp import tool
 from pydantic import Field
-from fastmcp import FastMCP
 import logging
 
 logger = logging.getLogger(__name__)
 
-def register(mcp: FastMCP):
+def register(mcp):
     """MCPにツールを登録"""
     logger.info("Registering ChatGPT required tools (search/fetch)...")
 

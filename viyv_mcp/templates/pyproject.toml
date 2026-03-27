@@ -6,9 +6,8 @@ authors = [
     {name="YourName", email="you@example.com"}
 ]
 dependencies = [
-    "fastmcp>=3.1.0",
     "starlette>=0.25.0",
     "uvicorn>=0.22.0",
-    "viyv_mcp>=1.0.0",
+    "viyv_mcp>=2.0.0",
     "pydantic==2.11.3",
 ]

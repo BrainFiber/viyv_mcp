@@ -22,18 +22,18 @@ from viyv_mcp.app.security.infrastructure.jwt_codec import (
     JWTExpiredError,
     decode_jwt,
 )
-from viyv_mcp.app.security.tool_registry import ToolSecurityRegistry
+from viyv_mcp.app.security.domain.models import ToolMetadataProvider
 
 logger = logging.getLogger(__name__)
 
 
 class SecurityService:
-    """Single entry-point consumed by the FastMCP middleware and ASGI layer."""
+    """Single entry-point consumed by the MCP handlers and ASGI layer."""
 
     def __init__(
         self,
         config: SecurityConfig,
-        tool_registry: ToolSecurityRegistry,
+        tool_registry: ToolMetadataProvider,
         audit_logger: logging.Logger,
     ) -> None:
         self._config = config

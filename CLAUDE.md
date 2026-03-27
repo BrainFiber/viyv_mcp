@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-`viyv_mcp` is a Python package that wraps FastMCP and Starlette to quickly create MCP (Model Context Protocol) servers with minimal boilerplate. It provides decorator-based APIs for tools, resources, prompts, and agents.
+`viyv_mcp` is a Python package that wraps the MCP SDK and Starlette to quickly create MCP (Model Context Protocol) servers with minimal boilerplate. It provides decorator-based APIs for tools, resources, and prompts.
 
 ## Development Commands
 
@@ -63,8 +63,9 @@ STATELESS_HTTP=true uv run gunicorn test_app:app -w 4 -k uvicorn.workers.Uvicorn
 
 ### Package Structure
 - **`viyv_mcp/`** - Main package
-  - `core.py` - ViyvMCP class that assembles the ASGI app with FastMCP and Starlette
-  - `decorators.py` - Decorator implementations (@tool, @resource, @prompt, @agent, @entry)
+  - `core.py` - ViyvMCP class that assembles the ASGI app with McpServer and Starlette
+  - `decorators.py` - Decorator implementations (@tool, @resource, @prompt, @entry)
+  - `server/` - McpServer, McpRegistry (direct mcp SDK wrapper)
   - `cli.py` - CLI for project generation (`create-viyv-mcp`)
   - `agent_runtime.py` - Agent runtime utilities for tool execution
   - `app/` - Core application components
@@ -83,28 +84,26 @@ STATELESS_HTTP=true uv run gunicorn test_app:app -w 4 -k uvicorn.workers.Uvicorn
       - `service.py` - SecurityService (authentication, authorization, audit orchestration)
       - `tool_registry.py` - ToolSecurityRegistry (thread-safe metadata store)
       - `context.py` - ContextVar for agent identity (stdio/HTTP bridge)
-      - `fastmcp_middleware.py` - FastMCP Middleware (on_call_tool, on_list_tools)
+      - (Security checks are in McpServer handlers, not a separate middleware)
       - `asgi_jwt_extractor.py` - ASGI middleware for HTTP JWT extraction
   - `__main__.py` - CLI for `python -m viyv_mcp generate-jwt`
   - `templates/` - Project template files
 
 ### Key Design Patterns
 
-1. **Decorator-Based Registration**: Tools, resources, prompts, and agents are registered using decorators that automatically find the FastMCP instance from the call stack.
+1. **Decorator-Based Registration**: Tools, resources, and prompts are registered using decorators (`@tool`, `@resource`, `@prompt`) that automatically find the `McpServer` instance from the call stack.
 
-2. **Auto-Registration**: Modules in specific directories (`app/tools/`, `app/resources/`, etc.) are automatically imported and registered if they have a `register(mcp: FastMCP)` function.
+2. **Auto-Registration**: Modules in specific directories (`app/tools/`, `app/resources/`, etc.) are automatically imported and registered if they have a `register(mcp)` function.
 
 3. **External MCP Bridge**: JSON config files in `app/mcp_server_configs/` define external MCP servers to launch and bridge automatically.
 
-4. **Dynamic Tool Injection**: Tools are refreshed on every request to ensure agents have the latest available tools.
+4. **McpServer (Direct mcp SDK)**: Uses `mcp.server.lowlevel.Server` directly — no FastMCP. `McpServer` (`viyv_mcp/server/mcp_server.py`) owns tool/resource/prompt registries, handles MCP protocol, and provides stdio + StreamableHTTP transports.
 
 5. **ASGI Architecture**: Custom ASGI-level routing that sends `/mcp` paths directly to the MCP app, bypassing Starlette middleware to fix SSE streaming issues.
 
-6. **Stateless HTTP Support**: New feature (v0.1.10) that enables stateless HTTP connections for multi-worker deployments. When enabled, session IDs are not required for MCP requests.
+6. **Stateless HTTP Support**: Enables stateless HTTP connections for multi-worker deployments. When enabled, session IDs are not required for MCP requests.
 
-9. **JWT Security (ContextVar + FastMCP Middleware hybrid)**: Agent identity established via JWT, enforced at FastMCP middleware level (works for both stdio and HTTP). ASGI middleware extracts JWT from HTTP Authorization headers and stores in ContextVar. For stdio, JWT is validated once at startup. Namespace controls tool visibility (tools/list filtering), numeric security_level controls tool executability (tools/call clearance check). Clearance and security_level are integers where lower = higher privilege. Access rule: `jwt.clearance <= tool.security_level`.
-
-10. **Observer Pattern for Tool Metadata**: `decorators.py` fires `_fire_tool_event("registered", ...)` hooks without depending on the security package. The security `__init__.py` registers a hook to populate `ToolSecurityRegistry`. This avoids circular dependencies between core and security modules.
+7. **JWT Security (ContextVar + Handler-level checks)**: Agent identity established via JWT, enforced at McpServer handler level (works for both stdio and HTTP). ASGI middleware extracts JWT from HTTP Authorization headers and stores in ContextVar. For stdio, JWT is validated once at startup. Namespace controls tool visibility (tools/list filtering), numeric security_level controls tool executability (tools/call clearance check). Clearance and security_level are integers where lower = higher privilege. Access rule: `jwt.clearance <= tool.security_level`.
 
 ### Code Examples
 
@@ -112,7 +111,7 @@ STATELESS_HTTP=true uv run gunicorn test_app:app -w 4 -k uvicorn.workers.Uvicorn
 ```python
 from viyv_mcp import tool
 
-def register(mcp: FastMCP):
+def register(mcp):
     @tool(description="Add two numbers", tags={"calc"})
     def add(a: int, b: int) -> int:
         return a + b
@@ -176,7 +175,7 @@ Create JSON files in `app/mcp_server_configs/`:
   - Values: "true", "1", "yes", "on" → True
   - Values: "false", "0", "no", "off" → False
   - When True: Session IDs are not required for MCP requests
-  - When False: Session management is enabled (default FastMCP behavior)
+  - When False: Session management is enabled (default MCP behavior)
 
 ### Security (JWT Authentication & Access Control)
 - `VIYV_MCP_AUTH` - Security mode: "bypass" (no checks), or omit to auto-detect
@@ -201,7 +200,7 @@ The `test/test_security/` directory contains comprehensive tests:
 - `test_domain/` - Pure policy and model tests (no mocks)
 - `test_infrastructure/` - JWT codec, config loader tests
 - `test_service.py` - SecurityService integration tests
-- `test_e2e.py` - End-to-end tests through FastMCP middleware chain + HTTP
+- `test_e2e.py` - End-to-end tests through McpServer handlers + HTTP
 
 ### Manual / example testing
 The `example/` directory contains sample implementations. Test new functionality by:
@@ -211,7 +210,7 @@ The `example/` directory contains sample implementations. Test new functionality
 
 ## Package Dependencies
 Core dependencies include:
-- `fastmcp>=3.1.0` - MCP protocol implementation
+- `mcp>=1.26.0` - MCP protocol implementation (direct SDK, no FastMCP)
 - `starlette>=0.25.0` - ASGI framework
 - `uvicorn>=0.22.0` - ASGI server
 - `pytest>=7.0` - Testing framework
@@ -223,12 +222,11 @@ Optional dependencies:
 
 ## Important Notes
 
-- When creating new modules, always define a `register(mcp: FastMCP)` function
+- When creating new modules, always define a `register(mcp)` function
 - External MCP configs require `command` and `args` fields in JSON
-- The `@agent` decorator creates both a tool and registers it in the agent registry
 - Static files are served from the path configured in `STATIC_DIR`
-- All decorators work by finding the FastMCP instance from the call stack
-- The package is distributed on PyPI as `viyv_mcp` (current version: 1.1.0)
+- All decorators work by finding the McpServer instance from the call stack
+- The package is distributed on PyPI as `viyv_mcp` (current version: 2.0.0)
 - Generated projects use `uv` for dependency management via `pyproject.toml`
 - The test/ directory contains working examples rather than unit tests - use these as reference implementations
 - External MCP servers are managed as child processes with stdio-based communication
@@ -302,7 +300,7 @@ Use these locations for temporary work that can be deleted anytime:
 ## MCP Tool Development Guidelines
 
 ### Tool Parameter Type Annotations
-- Use `Annotated` and `Field` from FastMCP for parameter definitions
+- Use `Annotated` and `Field` from pydantic for parameter definitions
 - Example: `query: Annotated[str, Field(description="Search query")]`
 - Optional parameters should have default values
 

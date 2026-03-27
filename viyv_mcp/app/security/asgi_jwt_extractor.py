@@ -2,8 +2,8 @@
 and stores the resulting :class:`AgentIdentity` in a :class:`ContextVar`.
 
 This layer does **not** perform authorization — it only establishes identity.
-The :class:`~viyv_mcp.app.security.fastmcp_middleware.ViyvSecurityMiddleware`
-running inside FastMCP handles all authorization decisions.
+The MCP protocol handlers in :class:`~viyv_mcp.server.mcp_server.McpServer`
+handle all authorization decisions.
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ class JWTExtractorMiddleware:
                     logger.debug("Security: JWT expired in HTTP request")
                 except JWTDecodeError as exc:
                     logger.debug(f"Security: JWT decode failed — {exc}")
-                # Fall through — identity stays None; FastMCP middleware will deny
+                # Fall through — identity stays None; MCP handler will deny
 
         await self.app(scope, receive, send)
 

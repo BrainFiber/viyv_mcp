@@ -11,8 +11,9 @@ from typing import List, Tuple, Set
 
 from mcp import ClientSession, types
 from mcp.client.stdio import stdio_client, StdioServerParameters
-from fastmcp import FastMCP
-import inspect
+
+from viyv_mcp.server import McpServer
+from viyv_mcp.server.registry import ResourceEntry, PromptEntry
 
 # タイムアウト定数
 BRIDGE_STARTUP_TIMEOUT = 30   # seconds: 外部 MCP サーバー起動 + initialize の上限
@@ -70,7 +71,7 @@ def _get_resource_uri(resource: types.Resource) -> str:
         return "unknown://resource"
 
 async def init_bridges(
-    mcp: FastMCP,
+    mcp: McpServer,
     config: str,
 ) -> List[BridgeHandle]:
     """
@@ -387,7 +388,7 @@ async def _safe_list_prompts(session: ClientSession, server_name: str) -> List[t
 # 実際の登録 (tool / resource / prompt)
 # ----------------------------------------------------------------------------
 def _register_tool_bridge(
-    mcp: FastMCP,
+    mcp: McpServer,
     session: ClientSession,
     tool_info: types.Tool,
     cfg_tags: Set[str] | None = None,
@@ -395,167 +396,52 @@ def _register_tool_bridge(
     cfg_namespace: str | None = None,
     cfg_security_level: int | None = None,
 ):
-    """
-    tool_info から inputSchema を解析し、kwargs を定義して bridged_tool を登録する
-
-    JSON Schema の情報（型、default、required、description）を pydantic の Field と
-    typing.Annotated を用いて __signature__ に動的に組み上げるように改修済み。
-    """
+    """Register a bridged tool by passing the external JSON Schema directly."""
     tool_name = tool_info.name
     desc = tool_info.description or f"Bridged external tool '{tool_name}'"
-    input_schema = tool_info.inputSchema or {}
+    input_schema = tool_info.inputSchema or {"type": "object", "properties": {}}
 
-    params = []
-    # JSON Schema の properties, required を利用して関数パラメータを構築
-    if isinstance(input_schema, dict):
-        props = input_schema.get("properties", {})
-        required_fields = input_schema.get("required", [])
-        json_type_mapping = {
-            'string': str,
-            'integer': int,
-            'object': dict,
-            'boolean': bool,
-            'number': float,
-            'array': list
-        }
-        from typing import Annotated, Optional
-        from pydantic import Field
+    async def _bridged_call(**kwargs):
+        args = {k: v for k, v in kwargs.items() if v is not None}
+        return await session.call_tool(tool_name, arguments=args)
 
-        for name, schema in props.items():
-            json_type = schema.get("type", "any")
-            base_type = json_type_mapping.get(json_type, object)
-            description_field = schema.get("description", "")
-            # 必須なら default は省略（pydanticでは ... を指定する）
-            if name in required_fields:
-                default_val = inspect.Parameter.empty
-                field_default = ...  # required
-            else:
-                # default が指定されていなければ None をデフォルトにし、Optional にする
-                if "default" in schema:
-                    default_val = schema["default"]
-                    field_default = default_val
-                else:
-                    default_val = None
-                    field_default = None
-                    base_type = Optional[base_type]
-            # Annotated に Field の情報を付与
-            annotated_type = Annotated[base_type, Field(field_default, description=description_field)]
-            param = inspect.Parameter(
-                name,
-                kind=inspect.Parameter.KEYWORD_ONLY, 
-                default=(default_val if default_val is not inspect.Parameter.empty else inspect.Parameter.empty),
-                annotation=annotated_type
-            )
-            params.append(param)
-    else:
-        # input_schema が dict でなければ、従来の挙動にフォールバック
-        arg_names = []
-        props = {}
-        if isinstance(input_schema, dict):
-            props = input_schema.get("properties", {})
-            arg_names = list(props.keys())
-        for name in arg_names:
-            param = inspect.Parameter(
-                name,
-                inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                default=inspect.Parameter.empty
-            )
-            params.append(param)
-
-    async def _impl(**all_kwargs):
-        # 必要な引数だけ抽出し、値がNone/空でないものだけ渡す
-        args_for_tool = {k: v for k, v in all_kwargs.items() if k in [p.name for p in params] and v is not None}
-        return await session.call_tool(tool_name, arguments=args_for_tool)
-
-    bridged_tool = _impl
-    bridged_tool.__signature__ = inspect.Signature(params)
-
-    # ★ __annotations__ を補完して型ヒント解決エラーを防ぐ
-    from typing import Any
-    bridged_tool.__annotations__ = {
-        p.name: (p.annotation if p.annotation is not inspect._empty else Any)
-        for p in params
-    }
-    bridged_tool.__annotations__["return"] = Any
-
-    bridged_tool.__doc__ = desc
-
-    # ── メタデータ構築 (group のみ _meta に含める) ──
-    meta_data = None
-    if cfg_group:
-        meta_data = {"viyv": {"group": cfg_group}}
-
-    # FastMCP にツールを登録
-    mcp.tool(
+    mcp.register_tool(
         name=tool_name,
         description=desc,
+        fn=_bridged_call,
+        input_schema=input_schema,
         tags=cfg_tags,
-        meta=meta_data,
-    )(bridged_tool)
-
-    # セキュリティイベント通知
-    from viyv_mcp.decorators import _fire_tool_event
-    _fire_tool_event("registered", tool_name, {
-        "namespace": cfg_namespace,
-        "security_level": cfg_security_level,
-    })
+        group=cfg_group,
+        namespace=cfg_namespace,
+        security_level=cfg_security_level,
+    )
 
 
-def _register_resource_bridge(mcp: FastMCP, session: ClientSession, rinfo: types.Resource):
-    # SDK バージョン互換: uri または uriTemplate を取得
+def _register_resource_bridge(mcp: McpServer, session: ClientSession, rinfo: types.Resource):
     uri_template = _get_resource_uri(rinfo)
     desc = rinfo.description or f"Bridged external resource '{uri_template}'"
 
-    @mcp.resource(uri_template)
     async def bridged_resource(**kwargs):
         from string import Template
         t = Template(uri_template.replace("{", "${"))
         actual_uri = t.substitute(**kwargs)
-
         content, mime_type = await session.read_resource(actual_uri)
         if isinstance(content, bytes):
             return content.decode("utf-8", errors="replace")
         return content
 
-    bridged_resource.__doc__ = desc
+    mcp.registry.register_resource(ResourceEntry(
+        uri=uri_template,
+        name=rinfo.name or uri_template,
+        description=desc,
+        fn=bridged_resource,
+    ))
 
 
-def _register_prompt_bridge(mcp: FastMCP, session: ClientSession, pinfo: types.Prompt):
+def _register_prompt_bridge(mcp: McpServer, session: ClientSession, pinfo: types.Prompt):
     prompt_name = pinfo.name
     desc = pinfo.description or f"Bridged external prompt '{prompt_name}'"
 
-    # ------------------------------------------------------------
-    # 1) Prompt 引数をシグネチャ化  (keyword-only が必須)
-    # ------------------------------------------------------------
-    params: list[inspect.Parameter] = []
-    annos: dict[str, type] = {}
-
-    # MCP Protocol: pinfo.arguments は list[PromptArgument] (Pydantic BaseModel)
-    # PromptArgument: name: str, description: str | None, required: bool | None
-    # Note: MCP Protocol には型情報がないため、すべて str として扱う
-    for arg in (pinfo.arguments or []):
-        # PromptArgument オブジェクトから属性を取得
-        name = arg.name
-        arg_required = arg.required if arg.required is not None else True  # デフォルトは True
-
-        # MCP Protocol には type 情報がないため、すべて str として扱う
-        py_type = str
-
-        # required が False の場合は default=None を設定
-        default = inspect.Parameter.empty if arg_required else None
-
-        param = inspect.Parameter(
-            name=name,
-            kind=inspect.Parameter.KEYWORD_ONLY,      # FastMCP 2.3 requirement
-            default=default,
-            annotation=py_type,
-        )
-        params.append(param)
-        annos[name] = py_type
-
-    # ------------------------------------------------------------
-    # 2) 本体実装
-    # ------------------------------------------------------------
     async def _impl(**kwargs):
         result = await session.get_prompt(
             prompt_name,
@@ -563,27 +449,21 @@ def _register_prompt_bridge(mcp: FastMCP, session: ClientSession, pinfo: types.P
         )
         return result.messages
 
-    _impl.__doc__ = desc
-    _impl.__signature__ = inspect.Signature(params)
-    _impl.__annotations__ = annos | {"return": list}     # 型ヒントを補完
-
-    # ------------------------------------------------------------
-    # 3) 登録
-    # ------------------------------------------------------------
-    mcp.prompt(name=prompt_name, description=desc)(_impl)
+    mcp.registry.register_prompt(PromptEntry(
+        name=prompt_name,
+        description=desc,
+        fn=_impl,
+        arguments=pinfo.arguments or [],
+    ))
 
 
 # ----------------------------------------------------------------------------
 # WSブリッジ向け: ツール動的削除ヘルパー
 # ----------------------------------------------------------------------------
-def unregister_bridged_tools(mcp: FastMCP, tool_names: List[str]) -> None:
+def unregister_bridged_tools(mcp: McpServer, tool_names: List[str]) -> None:
     """ブリッジツールを動的に削除する（WSブリッジ切断時用）"""
-    from viyv_mcp.decorators import _unregister_tool_fn
-
     for name in tool_names:
         try:
-            if hasattr(mcp, "remove_tool"):
-                mcp.remove_tool(name)
-            _unregister_tool_fn(name)  # also fires "unregistered" event
+            mcp.remove_tool(name)
         except Exception as e:
             logger.warning(f"Failed to remove tool '{name}': {e}")

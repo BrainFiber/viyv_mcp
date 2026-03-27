@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Tuple
+from typing import Protocol, Tuple
 
 
 class AuthMode(Enum):
@@ -57,3 +57,12 @@ class AuthResult:
     allowed: bool
     reason: str  # "" | "namespace" | "clearance"
     detail: str = ""
+
+
+class ToolMetadataProvider(Protocol):
+    """Interface for looking up tool security metadata.
+
+    Implemented by :class:`~viyv_mcp.server.registry.McpRegistry`.
+    """
+
+    def get(self, tool_name: str) -> ToolSecurityMeta: ...

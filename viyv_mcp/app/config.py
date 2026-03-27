@@ -14,7 +14,7 @@ class Config:
     RELAY_KEY_TTL_HOURS = float(os.getenv("RELAY_KEY_TTL_HOURS", "24"))
     RELAY_KEY_STORAGE = os.getenv("RELAY_KEY_STORAGE", "data/relay_keys.json")
 
-    # FastMCP stateless_http オプション (環境変数から読み込み)
+    # stateless_http オプション (環境変数から読み込み)
     # "true", "1", "yes" などは True として扱う
     @staticmethod
     def get_stateless_http():
