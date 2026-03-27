@@ -4,27 +4,36 @@ from viyv_mcp.app.security.domain.models import (
     AgentIdentity,
     AuthMode,
     AuthResult,
-    DEFAULT_SECURITY_LEVELS,
-    SecurityLevel,
     ToolSecurityMeta,
 )
 
 
 def test_agent_identity_frozen():
-    agent = AgentIdentity(sub="a", clearance="public", namespace="ns")
+    agent = AgentIdentity(sub="a", clearance=0, namespace="ns")
     assert agent.sub == "a"
+    assert agent.clearance == 0
     assert agent.trust == ()
 
 
 def test_agent_identity_with_trust():
-    agent = AgentIdentity(sub="a", clearance="public", namespace="ns", trust=("x", "y"))
+    agent = AgentIdentity(sub="a", clearance=1, namespace="ns", trust=("x", "y"))
     assert agent.trust == ("x", "y")
+
+
+def test_agent_identity_clearance_none():
+    agent = AgentIdentity(sub="a", clearance=None, namespace="ns")
+    assert agent.clearance is None
 
 
 def test_tool_security_meta_defaults():
     meta = ToolSecurityMeta()
     assert meta.namespace == "common"
-    assert meta.security_level == "public"
+    assert meta.security_level is None
+
+
+def test_tool_security_meta_with_level():
+    meta = ToolSecurityMeta(namespace="hr", security_level=1)
+    assert meta.security_level == 1
 
 
 def test_auth_result():
@@ -39,14 +48,3 @@ def test_auth_mode():
     assert AuthMode.BYPASS.value == "bypass"
     assert AuthMode.AUTHENTICATED.value == "authenticated"
     assert AuthMode.DENY_ALL.value == "deny_all"
-
-
-def test_default_security_levels():
-    assert DEFAULT_SECURITY_LEVELS["public"] == 0
-    assert DEFAULT_SECURITY_LEVELS["restricted"] == 3
-
-
-def test_security_level():
-    sl = SecurityLevel(name="top_secret", rank=99)
-    assert sl.name == "top_secret"
-    assert sl.rank == 99

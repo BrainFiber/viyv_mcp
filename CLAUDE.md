@@ -102,7 +102,7 @@ STATELESS_HTTP=true uv run gunicorn test_app:app -w 4 -k uvicorn.workers.Uvicorn
 
 6. **Stateless HTTP Support**: New feature (v0.1.10) that enables stateless HTTP connections for multi-worker deployments. When enabled, session IDs are not required for MCP requests.
 
-9. **JWT Security (ContextVar + FastMCP Middleware hybrid)**: Agent identity established via JWT, enforced at FastMCP middleware level (works for both stdio and HTTP). ASGI middleware extracts JWT from HTTP Authorization headers and stores in ContextVar. For stdio, JWT is validated once at startup. Namespace controls tool visibility (tools/list filtering), security_level controls tool executability (tools/call clearance check).
+9. **JWT Security (ContextVar + FastMCP Middleware hybrid)**: Agent identity established via JWT, enforced at FastMCP middleware level (works for both stdio and HTTP). ASGI middleware extracts JWT from HTTP Authorization headers and stores in ContextVar. For stdio, JWT is validated once at startup. Namespace controls tool visibility (tools/list filtering), numeric security_level controls tool executability (tools/call clearance check). Clearance and security_level are integers where lower = higher privilege. Access rule: `jwt.clearance <= tool.security_level`.
 
 10. **Observer Pattern for Tool Metadata**: `decorators.py` fires `_fire_tool_event("registered", ...)` hooks without depending on the security package. The security `__init__.py` registers a hook to populate `ToolSecurityRegistry`. This avoids circular dependencies between core and security modules.
 
@@ -121,7 +121,7 @@ def register(mcp: FastMCP):
     @tool(
         description="Query employee salary",
         namespace="hr",                 # Visible only to agents with hr namespace
-        security_level="confidential",  # Requires confidential or higher clearance
+        security_level=1,              # Requires clearance <= 1 (0=highest privilege)
     )
     def query_salary(employee_id: str) -> str:
         return f"Salary for {employee_id}: $100,000"
@@ -153,9 +153,9 @@ Create JSON files in `app/mcp_server_configs/`:
   "cwd": "/path/to/working/directory",
   "tags": ["filesystem", "git"],
   "namespace": "hr",
-  "security_level": "confidential",
+  "security_level": 1,
   "namespace_map": { "public_stats": "common" },
-  "security_level_map": { "update_salary": "restricted" }
+  "security_level_map": { "update_salary": 0 }
 }
 ```
 
@@ -195,7 +195,7 @@ The repository has two testing approaches:
 
 ### Unit & E2E tests (pytest)
 ```bash
-pytest test/test_security/ -v   # Security subsystem: 65 tests
+pytest test/test_security/ -v   # Security subsystem: 68 tests
 ```
 The `test/test_security/` directory contains comprehensive tests:
 - `test_domain/` - Pure policy and model tests (no mocks)
@@ -228,7 +228,7 @@ Optional dependencies:
 - The `@agent` decorator creates both a tool and registers it in the agent registry
 - Static files are served from the path configured in `STATIC_DIR`
 - All decorators work by finding the FastMCP instance from the call stack
-- The package is distributed on PyPI as `viyv_mcp` (current version: 1.0.0)
+- The package is distributed on PyPI as `viyv_mcp` (current version: 1.1.0)
 - Generated projects use `uv` for dependency management via `pyproject.toml`
 - The test/ directory contains working examples rather than unit tests - use these as reference implementations
 - External MCP servers are managed as child processes with stdio-based communication
@@ -348,7 +348,7 @@ For ChatGPT integration, these tools are mandatory:
 - **bypass mode not starting**: `VIYV_MCP_ENV=production` blocks bypass mode. Remove or change VIYV_MCP_ENV
 - **"Authentication failed" errors**: Check that `VIYV_MCP_JWT_SECRET` matches the secret used to sign the JWT
 - **"Tool not found" for existing tools**: The tool's namespace is not in the agent's trusted namespaces. Check JWT `namespace` and `trust` claims
-- **"insufficient clearance" errors**: Agent's `clearance` claim rank is below the tool's `security_level` rank
-- **JWT generation**: Use `python -m viyv_mcp generate-jwt --sub agent --clearance internal --namespace hr --trust common --expires 24h --secret $SECRET`
+- **"insufficient clearance" errors**: Agent's numeric `clearance` is greater than the tool's `security_level` (lower number = higher privilege; rule: `clearance <= security_level`)
+- **JWT generation**: Use `python -m viyv_mcp generate-jwt --sub agent --clearance 2 --namespace hr --trust common --expires 24h --secret $SECRET`
 - **Audit log location**: Set `VIYV_MCP_AUDIT_LOG=/path/to/audit.jsonl` or check stderr for audit records
 - **stdio mode**: Set `VIYV_MCP_JWT` env var; identity is validated once at startup and fixed for process lifetime

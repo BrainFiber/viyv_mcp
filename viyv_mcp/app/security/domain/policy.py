@@ -36,37 +36,28 @@ def check_namespace_visibility(
 
 
 def check_clearance(
-    agent_clearance_rank: int,
-    tool_level_rank: int,
+    agent_clearance: int | None,
+    tool_security_level: int | None,
 ) -> bool:
-    """Return ``True`` if the agent has sufficient clearance."""
-    return agent_clearance_rank >= tool_level_rank
+    """Return ``True`` if the agent has sufficient clearance.
 
-
-def resolve_security_level_rank(
-    level_name: str,
-    levels: dict[str, int],
-) -> int:
-    """Map a level name to its numeric rank.
-
-    Raises :class:`ValueError` if *level_name* is not found in *levels*.
+    - ``tool_security_level is None`` → unrestricted (always ``True``).
+    - ``agent_clearance is None`` → no privilege (``False`` if tool is restricted).
+    - Otherwise: ``agent_clearance <= tool_security_level`` (lower = higher privilege).
     """
-    try:
-        return levels[level_name]
-    except KeyError:
-        raise ValueError(
-            f"Unknown security level {level_name!r}. "
-            f"Known levels: {', '.join(sorted(levels))}"
-        ) from None
+    if tool_security_level is None:
+        return True
+    if agent_clearance is None:
+        return False
+    return agent_clearance <= tool_security_level
 
 
 def authorize_tool_access(
     agent: AgentIdentity,
     tool_namespace: str,
-    tool_security_level: str,
+    tool_security_level: int | None,
     *,
     trusted_namespaces: frozenset[str],
-    security_levels: dict[str, int],
 ) -> AuthResult:
     """Run both namespace and clearance checks, returning a single result."""
 
@@ -79,31 +70,13 @@ def authorize_tool_access(
         )
 
     # 2. Clearance
-    try:
-        agent_rank = resolve_security_level_rank(agent.clearance, security_levels)
-    except ValueError:
-        return AuthResult(
-            allowed=False,
-            reason="clearance",
-            detail=f"Agent clearance '{agent.clearance}' is not a known security level",
-        )
-
-    try:
-        tool_rank = resolve_security_level_rank(tool_security_level, security_levels)
-    except ValueError:
-        return AuthResult(
-            allowed=False,
-            reason="clearance",
-            detail=f"Tool security level '{tool_security_level}' is not a known security level",
-        )
-
-    if not check_clearance(agent_rank, tool_rank):
+    if not check_clearance(agent.clearance, tool_security_level):
         return AuthResult(
             allowed=False,
             reason="clearance",
             detail=(
-                f"Agent clearance '{agent.clearance}' (rank {agent_rank}) "
-                f"is below required '{tool_security_level}' (rank {tool_rank})"
+                f"Agent clearance {agent.clearance} insufficient "
+                f"for tool level {tool_security_level}"
             ),
         )
 

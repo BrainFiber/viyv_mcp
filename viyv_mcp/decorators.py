@@ -285,7 +285,7 @@ def tool(
     title: str | None = None,
     destructive: bool | None = None,
     namespace: str | None = None,          # Security: tool namespace
-    security_level: str | None = None,     # Security: required clearance
+    security_level: int | None = None,     # Security: required clearance level (0=highest)
 ):
     """ツールを FastMCP に登録するデコレータ。"""
 
@@ -403,7 +403,7 @@ def agent(
     group: str | None = None,
     title: str | None = None,
     namespace: str | None = None,
-    security_level: str | None = None,
+    security_level: int | None = None,
 ):
     if (use_tools and exclude_tools) or (use_tags and exclude_tags):
         raise ValueError("include と exclude を同時指定できません")

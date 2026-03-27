@@ -622,7 +622,7 @@ def register_browser_tools_for_session(
         )
         _register_tool_bridge(
             mcp, session, tool_info, tag_set, 'Browser',
-            cfg_namespace='browser', cfg_security_level='internal',
+            cfg_namespace='browser', cfg_security_level=1,
         )
         registered.append(tool_def['name'])
 

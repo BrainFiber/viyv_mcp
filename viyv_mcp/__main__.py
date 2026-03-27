@@ -43,11 +43,12 @@ def cmd_generate_jwt(args: argparse.Namespace) -> None:
 
     payload = {
         "sub": args.sub,
-        "clearance": args.clearance,
         "namespace": args.namespace,
         "iat": now,
         "exp": now + expires_seconds,
     }
+    if args.clearance is not None:
+        payload["clearance"] = args.clearance
     if args.trust:
         payload["trust"] = args.trust
 
@@ -98,7 +99,8 @@ def main() -> None:
         help="Generate a signed JWT for agent authentication",
     )
     p_jwt.add_argument("--sub", required=True, help="Agent name (JWT sub claim)")
-    p_jwt.add_argument("--clearance", required=True, help="Security clearance level")
+    p_jwt.add_argument("--clearance", type=int, default=None,
+                        help="Security clearance level (integer, 0=highest; omit for lowest)")
     p_jwt.add_argument("--namespace", required=True, help="Agent namespace")
     p_jwt.add_argument(
         "--trust", action="append", default=[], help="Additional trusted namespace (repeatable)"

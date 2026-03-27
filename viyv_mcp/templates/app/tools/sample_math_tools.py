@@ -69,7 +69,7 @@ def register(mcp: FastMCP):  # auto_register_modules から呼ばれる
         tags={"calcXX"},
         group="統計ツール",
         namespace="analytics",          # ★ namespace: analytics エージェントのみ表示
-        security_level="internal",      # ★ security_level: internal 以上で実行可
+        security_level=2,               # ★ security_level: clearance ≤ 2 で実行可
     )
     def average(
         numbers: Annotated[

@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-03-27
+
+### Changed
+- **Security: numeric clearance/security_level**: Both values are now integers (0 = highest privilege). String-based labels and `DEFAULT_SECURITY_LEVELS` mapping removed
+- **Access rule**: `jwt.clearance <= tool.security_level` grants access (lower number = higher privilege)
+- **Missing values**: No clearance in JWT → lowest privilege (denied if tool has restriction); No security_level on tool → unrestricted (anyone can access)
+- **CLI**: `--clearance` now accepts an integer and is optional (omit for lowest privilege)
+- **Bridge config**: `security_level` and `security_level_map` now use integer values
+- **Backward compatibility**: Legacy string clearance/security_level values produce a warning and are treated as undefined (graceful degradation)
+
+### Removed
+- `DEFAULT_SECURITY_LEVELS` constant (string-to-rank mapping no longer needed)
+- `SecurityLevel` dataclass (unused)
+- `resolve_security_level_rank()` function (replaced by direct numeric comparison)
+- `SecurityConfig.security_levels` field (label mapping no longer needed)
+
 ## [1.0.1] - 2026-03-27
 
 ### Fixed

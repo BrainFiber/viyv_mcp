@@ -110,7 +110,7 @@ class TestToolDecorator:
                 @tool(
                     description="Secret tool",
                     namespace="hr",
-                    security_level="confidential",
+                    security_level=1,
                 )
                 def secret_tool() -> str:
                     return "secret"
@@ -120,7 +120,7 @@ class TestToolDecorator:
             registered_events = [e for e in events if e[0] == "registered" and e[1] == "secret_tool"]
             assert len(registered_events) == 1
             assert registered_events[0][2]["namespace"] == "hr"
-            assert registered_events[0][2]["security_level"] == "confidential"
+            assert registered_events[0][2]["security_level"] == 1
         finally:
             _tool_event_hooks.remove(_capture)
 

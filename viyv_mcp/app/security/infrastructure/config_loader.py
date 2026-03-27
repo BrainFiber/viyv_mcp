@@ -6,9 +6,9 @@ import logging
 import os
 from typing import Any
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel
 
-from viyv_mcp.app.security.domain.models import AuthMode, DEFAULT_SECURITY_LEVELS
+from viyv_mcp.app.security.domain.models import AuthMode
 
 logger = logging.getLogger(__name__)
 
@@ -25,20 +25,11 @@ class SecurityConfig(BaseModel):
     jwt_algorithm: str = "HS256"
     jwt_issuer: str | None = None
     jwt_audience: str | None = None
-    security_levels: dict[str, int] = dict(DEFAULT_SECURITY_LEVELS)
     implicit_trust_common: bool = True
     audit_log_path: str | None = None
     env_name: str | None = None
 
-    model_config = {"frozen": True}
-
-    @field_validator("security_levels", mode="before")
-    @classmethod
-    def _parse_security_levels(cls, v: Any) -> dict[str, int]:
-        """Accept both ``{name: rank}`` dicts and ``[{name, rank}]`` lists."""
-        if isinstance(v, list):
-            return {item["name"]: item["rank"] for item in v}
-        return v
+    model_config = {"frozen": True, "extra": "ignore"}
 
 
 def load_security_config(yaml_path: str | None = None) -> SecurityConfig:
@@ -100,7 +91,6 @@ def load_security_config(yaml_path: str | None = None) -> SecurityConfig:
         "jwt_algorithm": yaml_data.get("jwt_algorithm", "HS256"),
         "jwt_issuer": yaml_data.get("jwt_issuer"),
         "jwt_audience": yaml_data.get("jwt_audience"),
-        "security_levels": yaml_data.get("security_levels", dict(DEFAULT_SECURITY_LEVELS)),
         "implicit_trust_common": yaml_data.get("implicit_trust_common", True),
         "audit_log_path": env_audit or yaml_data.get("audit_log_path"),
         "env_name": env_name,

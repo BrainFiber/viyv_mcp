@@ -106,9 +106,28 @@ async def init_bridges(
         cwd          = cfg.get("cwd", None)
         # Security metadata
         cfg_namespace: str | None = cfg.get("namespace", None)
-        cfg_security_level: str | None = cfg.get("security_level", None)
+        raw_sl = cfg.get("security_level")
+        if raw_sl is not None:
+            try:
+                cfg_security_level: int | None = int(raw_sl)
+            except (TypeError, ValueError):
+                logger.warning(
+                    f"Invalid security_level '{raw_sl}' in bridge config '{name}', "
+                    "treating as unrestricted"
+                )
+                cfg_security_level = None
+        else:
+            cfg_security_level = None
         cfg_namespace_map: dict[str, str] = cfg.get("namespace_map", {})
-        cfg_security_level_map: dict[str, str] = cfg.get("security_level_map", {})
+        raw_sl_map = cfg.get("security_level_map", {})
+        cfg_security_level_map: dict[str, int] = {}
+        for sl_key, sl_val in raw_sl_map.items():
+            try:
+                cfg_security_level_map[sl_key] = int(sl_val)
+            except (TypeError, ValueError):
+                logger.warning(
+                    f"Invalid security_level_map value '{sl_val}' for tool '{sl_key}', skipping"
+                )
 
         # 環境変数マージ（OS が優先）
         env_merged = {k: os.environ.get(k, v) for k, v in json_env.items()}
@@ -374,7 +393,7 @@ def _register_tool_bridge(
     cfg_tags: Set[str] | None = None,
     cfg_group: str | None = None,
     cfg_namespace: str | None = None,
-    cfg_security_level: str | None = None,
+    cfg_security_level: int | None = None,
 ):
     """
     tool_info から inputSchema を解析し、kwargs を定義して bridged_tool を登録する

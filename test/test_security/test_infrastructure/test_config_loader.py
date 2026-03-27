@@ -16,14 +16,14 @@ def test_defaults():
     config = SecurityConfig()
     assert config.auth_mode == AuthMode.DENY_ALL
     assert config.implicit_trust_common is True
-    assert "public" in config.security_levels
 
 
-def test_security_levels_from_list():
+def test_extra_fields_ignored():
+    """Old YAML with security_levels should not cause ValidationError."""
     config = SecurityConfig(
-        security_levels=[{"name": "low", "rank": 0}, {"name": "high", "rank": 1}]
+        security_levels={"public": 0, "internal": 1}
     )
-    assert config.security_levels == {"low": 0, "high": 1}
+    assert config.auth_mode == AuthMode.DENY_ALL  # constructed successfully
 
 
 def test_validate_bypass_production(monkeypatch):

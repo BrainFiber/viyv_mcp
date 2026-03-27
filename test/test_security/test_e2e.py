@@ -7,6 +7,10 @@ Two approaches are used:
   1. **FastMCP direct calls** (call_tool / list_tools) — exercises the
      middleware chain without HTTP/SSE transport complications.
   2. **HTTP tools/list** via TestClient — verifies the ASGI JWT extractor.
+
+Numeric clearance/security_level semantics:
+  Lower number = higher privilege (0 = top).
+  access rule: agent.clearance <= tool.security_level → allowed.
 """
 
 from __future__ import annotations
@@ -41,7 +45,7 @@ def _make_jwt(**overrides: Any) -> str:
     now = int(time.time())
     payload = {
         "sub": "test-agent",
-        "clearance": "internal",
+        "clearance": 2,
         "namespace": "hr",
         "iat": now,
         "exp": now + 3600,
@@ -80,17 +84,18 @@ def _build_mcp(auth_mode: AuthMode = AuthMode.AUTHENTICATED):
     def shared_report() -> str:
         return "report_data"
 
-    registry.register("add", ToolSecurityMeta(namespace="common", security_level="public"))
-    registry.register("query_salary", ToolSecurityMeta(namespace="hr", security_level="confidential"))
-    registry.register("execute_trade", ToolSecurityMeta(namespace="finance", security_level="restricted"))
-    registry.register("update_salary", ToolSecurityMeta(namespace="hr", security_level="restricted"))
-    registry.register("shared_report", ToolSecurityMeta(namespace="analytics", security_level="internal"))
+    # Numeric security_level: lower = more restricted
+    registry.register("add", ToolSecurityMeta(namespace="common", security_level=None))
+    registry.register("query_salary", ToolSecurityMeta(namespace="hr", security_level=1))
+    registry.register("execute_trade", ToolSecurityMeta(namespace="finance", security_level=0))
+    registry.register("update_salary", ToolSecurityMeta(namespace="hr", security_level=0))
+    registry.register("shared_report", ToolSecurityMeta(namespace="analytics", security_level=2))
 
     mcp.add_middleware(mw)
     return mcp, service, registry
 
 
-def _set_identity(sub="test-agent", clearance="internal", namespace="hr", trust=()):
+def _set_identity(sub="test-agent", clearance=2, namespace="hr", trust=()):
     """Set ContextVar identity, return the reset token."""
     agent = AgentIdentity(sub=sub, clearance=clearance, namespace=namespace, trust=trust)
     return set_agent_identity(agent)
@@ -104,12 +109,12 @@ def _set_identity(sub="test-agent", clearance="internal", namespace="hr", trust=
 async def test_tools_list_namespace_filter():
     """Agent (ns=hr, trust=[common]) sees hr + common tools only."""
     mcp, _, _ = _build_mcp()
-    token = _set_identity(clearance="confidential", namespace="hr", trust=("common",))
+    token = _set_identity(clearance=1, namespace="hr", trust=("common",))
     try:
         tools = await mcp.list_tools()
         names = {t.name for t in tools}
 
-        assert "add" in names, "common/public should be visible"
+        assert "add" in names, "common/unrestricted should be visible"
         assert "query_salary" in names, "hr tool should be visible"
         assert "update_salary" in names, "hr tool should be visible"
         assert "execute_trade" not in names, "finance tool must be hidden"
@@ -119,14 +124,14 @@ async def test_tools_list_namespace_filter():
 
 
 # ---------------------------------------------------------------------------
-# Scenario 2: tools/call — allowed (common/public tool)
+# Scenario 2: tools/call — allowed (common/unrestricted tool)
 # ---------------------------------------------------------------------------
 
 @pytest.mark.anyio
 async def test_tools_call_allowed():
-    """Agent with sufficient clearance calls a common/public tool."""
+    """Agent with sufficient clearance calls a common/unrestricted tool."""
     mcp, _, _ = _build_mcp()
-    token = _set_identity(clearance="confidential", trust=("common",))
+    token = _set_identity(clearance=1, trust=("common",))
     try:
         result = await mcp.call_tool("add", {"a": 5, "b": 3})
         text = result.content[0].text
@@ -141,11 +146,11 @@ async def test_tools_call_allowed():
 
 @pytest.mark.anyio
 async def test_tools_call_clearance_denied():
-    """Agent with 'internal' clearance cannot call 'restricted' tool."""
+    """Agent with clearance=2 cannot call tool with security_level=0."""
     from mcp.shared.exceptions import McpError
 
     mcp, _, _ = _build_mcp()
-    token = _set_identity(clearance="internal", namespace="hr")
+    token = _set_identity(clearance=2, namespace="hr")
     try:
         with pytest.raises(McpError) as exc_info:
             await mcp.call_tool("update_salary", {"employee_id": "E1", "new_salary": 99})
@@ -164,7 +169,7 @@ async def test_tools_call_namespace_denied():
     from mcp.shared.exceptions import McpError
 
     mcp, _, _ = _build_mcp()
-    token = _set_identity(clearance="restricted", namespace="hr")
+    token = _set_identity(clearance=0, namespace="hr")
     try:
         with pytest.raises(McpError) as exc_info:
             await mcp.call_tool("execute_trade", {"symbol": "AAPL", "amount": 100})
@@ -202,14 +207,14 @@ async def test_tools_call_no_identity():
 
 
 # ---------------------------------------------------------------------------
-# Scenario 7: tools/call — confidential tool with confidential clearance
+# Scenario 7: tools/call — exact clearance match
 # ---------------------------------------------------------------------------
 
 @pytest.mark.anyio
 async def test_tools_call_exact_clearance():
-    """Agent with 'confidential' clearance can call 'confidential' tool."""
+    """Agent with clearance=1 can call tool with security_level=1."""
     mcp, _, _ = _build_mcp()
-    token = _set_identity(clearance="confidential", namespace="hr")
+    token = _set_identity(clearance=1, namespace="hr")
     try:
         result = await mcp.call_tool("query_salary", {"employee_id": "E42"})
         assert "100000" in result.content[0].text
@@ -225,7 +230,7 @@ async def test_tools_call_exact_clearance():
 async def test_trust_grants_cross_namespace_access():
     """Agent with trust=['analytics'] can see analytics tools."""
     mcp, _, _ = _build_mcp()
-    token = _set_identity(clearance="internal", namespace="hr", trust=("common", "analytics"))
+    token = _set_identity(clearance=2, namespace="hr", trust=("common", "analytics"))
     try:
         tools = await mcp.list_tools()
         names = {t.name for t in tools}
@@ -276,7 +281,7 @@ def test_http_tools_list_with_jwt():
     app = mcp.http_app(path="/", stateless_http=True)
     app = JWTExtractorMiddleware(app, service)
 
-    token = _make_jwt(namespace="hr", clearance="confidential", trust=["common"])
+    token = _make_jwt(namespace="hr", clearance=1, trust=["common"])
 
     with TestClient(app) as c:
         resp = c.post(

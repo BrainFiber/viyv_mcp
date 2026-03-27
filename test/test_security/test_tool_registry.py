@@ -6,7 +6,7 @@ from viyv_mcp.app.security.tool_registry import ToolSecurityRegistry
 
 def test_register_and_get():
     reg = ToolSecurityRegistry()
-    meta = ToolSecurityMeta(namespace="hr", security_level="confidential")
+    meta = ToolSecurityMeta(namespace="hr", security_level=1)
     reg.register("query_salary", meta)
     assert reg.get("query_salary") == meta
 
@@ -15,7 +15,7 @@ def test_get_default():
     reg = ToolSecurityRegistry()
     meta = reg.get("nonexistent")
     assert meta.namespace == "common"
-    assert meta.security_level == "public"
+    assert meta.security_level is None
 
 
 def test_unregister():

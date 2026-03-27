@@ -107,10 +107,7 @@ def create_security_layer() -> SecurityLayer | None:
 
     middleware = ViyvSecurityMiddleware(service)
 
-    logger.info(
-        f"Security: layer created — mode={config.auth_mode.value}, "
-        f"levels={list(config.security_levels.keys())}"
-    )
+    logger.info(f"Security: layer created -- mode={config.auth_mode.value}")
     return SecurityLayer(service, middleware)
 
 
@@ -131,11 +128,23 @@ def _register_tool_event_hook(registry: ToolSecurityRegistry) -> None:
 
     def _on_tool_event(event: str, tool_name: str, metadata: dict[str, Any] | None) -> None:
         if event == "registered" and metadata:
+            raw_sl = metadata.get("security_level")
+            if raw_sl is not None:
+                try:
+                    sl: int | None = int(raw_sl)
+                except (TypeError, ValueError):
+                    logger.warning(
+                        f"Invalid security_level '{raw_sl}' for tool '{tool_name}', "
+                        "treating as unrestricted"
+                    )
+                    sl = None
+            else:
+                sl = None
             registry.register(
                 tool_name,
                 ToolSecurityMeta(
                     namespace=metadata.get("namespace") or "common",
-                    security_level=metadata.get("security_level") or "public",
+                    security_level=sl,
                 ),
             )
         elif event == "unregistered":

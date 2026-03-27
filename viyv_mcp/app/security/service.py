@@ -67,7 +67,7 @@ class SecurityService:
         )
 
         # Required claims
-        for claim in ("sub", "clearance", "namespace"):
+        for claim in ("sub", "namespace"):
             if claim not in payload:
                 raise JWTDecodeError(f"Missing required JWT claim: {claim}")
 
@@ -77,9 +77,22 @@ class SecurityService:
             raw_trust = []
         trust = tuple(str(t) for t in raw_trust)
 
+        # clearance: int | None (missing = lowest privilege)
+        raw_clearance = payload.get("clearance")
+        if raw_clearance is not None:
+            try:
+                clearance: int | None = int(raw_clearance)
+            except (TypeError, ValueError):
+                logger.warning(
+                    f"Invalid clearance value in JWT: {raw_clearance!r}, treating as None"
+                )
+                clearance = None
+        else:
+            clearance = None
+
         return AgentIdentity(
             sub=str(payload["sub"]),
-            clearance=str(payload["clearance"]),
+            clearance=clearance,
             namespace=str(payload["namespace"]),
             trust=trust,
         )
@@ -99,7 +112,6 @@ class SecurityService:
             meta.namespace,
             meta.security_level,
             trusted_namespaces=trusted_ns,
-            security_levels=self._config.security_levels,
         )
 
     def filter_tools_for_agent(

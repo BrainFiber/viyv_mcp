@@ -5,7 +5,7 @@ No external dependencies — only Python stdlib.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Tuple
 
@@ -19,16 +19,12 @@ class AuthMode(Enum):
 
 
 @dataclass(frozen=True)
-class SecurityLevel:
-    """A named security clearance level with a numeric rank."""
-
-    name: str
-    rank: int
-
-
-@dataclass(frozen=True)
 class AgentIdentity:
     """Identity extracted from a validated JWT.
+
+    ``clearance`` is a numeric value where lower numbers indicate higher
+    privilege (0 = top).  ``None`` means no clearance was provided, which
+    is treated as the lowest privilege level.
 
     ``trusted_namespaces`` is **not** computed here because the calculation
     depends on configuration (``implicit_trust_common``).  Use
@@ -37,17 +33,21 @@ class AgentIdentity:
     """
 
     sub: str
-    clearance: str
+    clearance: int | None
     namespace: str
     trust: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
 class ToolSecurityMeta:
-    """Security metadata attached to a single tool."""
+    """Security metadata attached to a single tool.
+
+    ``security_level`` is a numeric value where lower numbers indicate
+    higher restriction.  ``None`` means unrestricted (anyone can access).
+    """
 
     namespace: str = "common"
-    security_level: str = "public"
+    security_level: int | None = None
 
 
 @dataclass(frozen=True)
@@ -57,12 +57,3 @@ class AuthResult:
     allowed: bool
     reason: str  # "" | "namespace" | "clearance"
     detail: str = ""
-
-
-# Default security levels (used when security.yaml is absent).
-DEFAULT_SECURITY_LEVELS: dict[str, int] = {
-    "public": 0,
-    "internal": 1,
-    "confidential": 2,
-    "restricted": 3,
-}

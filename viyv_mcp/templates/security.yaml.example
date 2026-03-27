@@ -8,16 +8,16 @@
 #   VIYV_MCP_ENV         - "production" blocks bypass mode
 #   VIYV_MCP_AUDIT_LOG   - Path to audit log file (JSONL)
 
-# Security levels (customize ranks as needed)
-security_levels:
-  - name: public
-    rank: 0
-  - name: internal
-    rank: 1
-  - name: confidential
-    rank: 2
-  - name: restricted
-    rank: 3
+# Clearance / security_level are now numeric integers (0 = highest privilege).
+# viyv_mcp compares numbers only; label semantics are defined by the deployer.
+#
+# Example:
+#   0 = restricted (top privilege)
+#   1 = confidential
+#   2 = internal
+#   3 = public (lowest privilege)
+#
+# Access rule: jwt.clearance <= tool.security_level -> allowed
 
 # When true, all agents implicitly trust the "common" namespace
 implicit_trust_common: true

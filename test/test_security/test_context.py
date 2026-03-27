@@ -9,7 +9,7 @@ from viyv_mcp.app.security.domain.models import AgentIdentity
 
 
 def test_set_and_get():
-    agent = AgentIdentity(sub="a", clearance="public", namespace="ns")
+    agent = AgentIdentity(sub="a", clearance=3, namespace="ns")
     token = set_agent_identity(agent)
     try:
         assert get_agent_identity() is agent
@@ -22,7 +22,7 @@ def test_default_is_none():
 
 
 def test_reset():
-    agent = AgentIdentity(sub="a", clearance="public", namespace="ns")
+    agent = AgentIdentity(sub="a", clearance=3, namespace="ns")
     token = set_agent_identity(agent)
     reset_agent_identity(token)
     assert get_agent_identity() is None
