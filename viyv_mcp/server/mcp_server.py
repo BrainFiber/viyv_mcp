@@ -57,12 +57,20 @@ class McpServer:
                 yield {}
             lifespan = _noop_lifespan
 
+        self._resource_handlers_registered = False
+        self._prompt_handlers_registered = False
+
         self._server = LowLevelServer(
             name=name,
             version=version,
             lifespan=lifespan,
         )
         self._register_handlers()
+
+        # Lazy handler registration: only advertise prompts/resources
+        # in capabilities when at least one is actually registered.
+        self.registry.on_first_resource = self._register_resource_handlers
+        self.registry.on_first_prompt = self._register_prompt_handlers
 
     @property
     def low_level_server(self) -> LowLevelServer:
@@ -138,6 +146,12 @@ class McpServer:
                 )
             return _normalize_tool_result(raw)
 
+    def _register_resource_handlers(self) -> None:
+        """Register resource handlers lazily (called on first resource registration)."""
+        if self._resource_handlers_registered:
+            return
+        self._resource_handlers_registered = True
+
         @self._server.list_resources()
         async def handle_list_resources() -> list[types.Resource]:
             return [
@@ -164,6 +178,12 @@ class McpServer:
             if inspect.iscoroutinefunction(fn):
                 return await fn(uri=uri_str)
             return fn(uri=uri_str)
+
+    def _register_prompt_handlers(self) -> None:
+        """Register prompt handlers lazily (called on first prompt registration)."""
+        if self._prompt_handlers_registered:
+            return
+        self._prompt_handlers_registered = True
 
         @self._server.list_prompts()
         async def handle_list_prompts() -> list[types.Prompt]:

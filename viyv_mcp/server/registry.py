@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, Optional
 
 import mcp.types as types
 
@@ -81,6 +81,8 @@ class McpRegistry:
         self._resources: Dict[str, ResourceEntry] = {}
         self._prompts: Dict[str, PromptEntry] = {}
         self._lock = threading.Lock()
+        self.on_first_resource: Callable[[], None] | None = None
+        self.on_first_prompt: Callable[[], None] | None = None
 
     # -- Tools ---------------------------------------------------------- #
 
@@ -116,7 +118,10 @@ class McpRegistry:
 
     def register_resource(self, entry: ResourceEntry) -> None:
         with self._lock:
+            first = len(self._resources) == 0
             self._resources[entry.uri] = entry
+        if first and self.on_first_resource:
+            self.on_first_resource()
 
     def get_resource(self, uri: str) -> ResourceEntry | None:
         with self._lock:
@@ -130,7 +135,10 @@ class McpRegistry:
 
     def register_prompt(self, entry: PromptEntry) -> None:
         with self._lock:
+            first = len(self._prompts) == 0
             self._prompts[entry.name] = entry
+        if first and self.on_first_prompt:
+            self.on_first_prompt()
 
     def get_prompt(self, name: str) -> PromptEntry | None:
         with self._lock:
